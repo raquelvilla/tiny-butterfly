@@ -1,5 +1,5 @@
-/* Tiny Butterfly — identity: heavy condensed caps, thick ink outlines, chrome tubes with airbrushed
-   shading and soft drop shadows, little pins where frames meet. */
+/* Tiny Butterfly — identity: Space Grotesk, thick ink outlines, flat plain controls; only the colours
+   themselves get airbrushed tube shading and soft shadows. Little pins where frames meet. */
 :root {
   --bg: #F1EFEA;
   --surface: #FBFAF7;
@@ -12,18 +12,17 @@
 
   --stroke: 2.5px;
   --radius: 22px;
-  --display: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+  --display: 'Space Grotesk', 'Helvetica Neue', Arial, sans-serif;
   --mono: 'DM Mono', ui-monospace, Menlo, monospace;
-  --sans: 'Archivo', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --sans: 'Space Grotesk', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 
   /* chrome ribbon: light top, cool mid, darker underside */
-  --chrome: linear-gradient(180deg, #FFFFFF 0%, #E9EBEF 38%, #C3C8D1 78%, #A9AFBA 100%);
+  --chrome: #FBFAF7;
   --chrome-ink: #16141A;
   /* airbrushed volume laid over any flat colour */
   --tube: radial-gradient(130% 90% at 22% 0%, rgba(255, 255, 255, .38), transparent 55%),
           linear-gradient(180deg, transparent 50%, rgba(0, 0, 0, .22));
   --tube-x: linear-gradient(180deg, rgba(255, 255, 255, .42) 0%, transparent 34%, transparent 62%, rgba(0, 0, 0, .24) 100%);
-  --raised: inset 0 2px 0 rgba(255, 255, 255, .85), inset 0 -3px 6px rgba(0, 0, 0, .14);
   --drop: 0 14px 26px -14px rgba(22, 16, 30, .55), 0 3px 6px -3px rgba(22, 16, 30, .3);
   --sunk: inset 0 3px 6px rgba(0, 0, 0, .1), inset 0 -1px 0 rgba(255, 255, 255, .7);
   color-scheme: light;
@@ -56,14 +55,12 @@ body {
 button, input, textarea, select { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
 
-/* the display voice: heavy, condensed, all caps */
+/* the display voice */
 .top h1, h2, .month h3, .swatch-day, .field > span, .tabs button, .primary, .ghost, .button-like,
 .suggestion .rule, .pal-card .name, .pal-card .mini, .seg button, .toast, .empty-note, .swatch-empty,
 .name-input, .pick .n, .cal .wd {
   font-family: var(--display);
-  font-stretch: 72%;
-  text-transform: uppercase;
-  letter-spacing: .02em;
+  font-stretch: normal;
 }
 
 /* ---- header & tabs ---- */
@@ -72,7 +69,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   max-width: 560px; margin: 0 auto;
   padding: calc(16px + env(safe-area-inset-top)) 16px 8px;
 }
-.top h1 { font-size: 28px; font-weight: 900; line-height: .9; margin: 0; }
+.top h1 { font-size: 24px; font-weight: 700; line-height: 1; letter-spacing: -.02em; margin: 0; }
 .top h1 em {
   font-style: normal; color: var(--accent); transition: color .5s;
   -webkit-text-stroke: 1px var(--ink); paint-order: stroke fill;
@@ -80,11 +77,11 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .icon-btn {
   width: 42px; height: 42px; border-radius: 50%; cursor: pointer; font-size: 20px; line-height: 1;
   border: var(--stroke) solid var(--ink); background: var(--chrome); color: var(--chrome-ink);
-  box-shadow: var(--raised), var(--drop);
+  box-shadow: none;
 }
 
 main { max-width: 560px; margin: 0 auto; padding: 8px 16px 24px; }
-h2 { font-size: 26px; font-weight: 900; line-height: 1; margin: 36px 0 14px; }
+h2 { font-size: 22px; font-weight: 700; line-height: 1.1; letter-spacing: -.01em; margin: 36px 0 14px; }
 
 .tabs {
   position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom));
@@ -92,7 +89,7 @@ h2 { font-size: 26px; font-weight: 900; line-height: 1; margin: 36px 0 14px; }
   display: flex; gap: 4px; padding: 5px;
   background: var(--chrome);
   border: var(--stroke) solid var(--ink); border-radius: 999px;
-  box-shadow: var(--raised), var(--drop);
+  box-shadow: none;
   z-index: 10;
 }
 .tabs::before, .tabs::after {   /* pins on either end, like the poster's connectors */
@@ -103,13 +100,13 @@ h2 { font-size: 26px; font-weight: 900; line-height: 1; margin: 36px 0 14px; }
 .tabs::after { right: -12px; }
 .tabs button {
   border: var(--stroke) solid transparent; background: transparent; border-radius: 999px;
-  padding: 9px 16px; cursor: pointer; font-size: 16px; font-weight: 800; color: #4A4650;
+  padding: 9px 16px; cursor: pointer; font-size: 16px; font-weight: 600; color: #4A4650;
   display: flex; align-items: center; gap: 7px;
 }
 .tabs .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .4; }
 .tabs button[aria-current="page"] {
-  color: var(--accent-ink); background-color: var(--accent); background-image: var(--tube-x);
-  border-color: #16141A; box-shadow: var(--raised);
+  color: var(--accent-ink); background-color: var(--accent);
+  border-color: #16141A;
 }
 .tabs button[aria-current="page"] .dot { background: currentColor; opacity: 1; }
 
@@ -117,22 +114,22 @@ h2 { font-size: 26px; font-weight: 900; line-height: 1; margin: 36px 0 14px; }
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .primary, .ghost, .button-like {
   border-radius: 999px; padding: 11px 22px; cursor: pointer;
-  font-weight: 800; font-size: 17px; line-height: 1.1; display: inline-flex; align-items: center;
+  font-weight: 600; font-size: 17px; line-height: 1.1; display: inline-flex; align-items: center;
   border: var(--stroke) solid var(--ink);
   transition: transform .12s ease, box-shadow .12s ease;
 }
 .primary {
-  background-color: var(--ink); background-image: linear-gradient(180deg, rgba(255,255,255,.22), transparent 45%, rgba(0,0,0,.4));
+  background-color: var(--ink);
   color: var(--bg); border-color: var(--ink);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .25), var(--drop);
+  box-shadow: none;
 }
-.ghost, .button-like { background: var(--chrome); color: var(--chrome-ink); box-shadow: var(--raised), var(--drop); }
-.primary:active, .ghost:active, .button-like:active { transform: translateY(2px); box-shadow: var(--raised); }
+.ghost, .button-like { background: var(--chrome); color: var(--chrome-ink); box-shadow: none; }
+.primary:active, .ghost:active, .button-like:active { transform: translateY(2px); }
 .primary:disabled { opacity: .3; cursor: default; box-shadow: none; transform: none; }
 .danger { color: #B42318; }
 
 .field { display: block; margin-bottom: 16px; }
-.field > span { display: block; font-size: 14px; font-weight: 800; color: var(--ink); margin-bottom: 6px; }
+.field > span { display: block; font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 6px; }
 .field em { font-style: normal; color: var(--muted); font-weight: 600; }
 .field input, .field textarea, .name-input {
   width: 100%; border: var(--stroke) solid var(--ink); background: var(--surface);
@@ -158,7 +155,7 @@ h2 { font-size: 26px; font-weight: 900; line-height: 1; margin: 36px 0 14px; }
 .frame {
   position: relative; margin: 14px 0 26px; padding: 9px;
   background: var(--chrome); border: var(--stroke) solid #16141A; border-radius: 34px;
-  box-shadow: var(--raised), var(--drop);
+  box-shadow: none;
 }
 .frame::before, .frame::after {
   content: ''; position: absolute; left: 50%; width: 9px; height: 18px; margin-left: -4.5px;
@@ -175,17 +172,17 @@ h2 { font-size: 26px; font-weight: 900; line-height: 1; margin: 36px 0 14px; }
 }
 .swatch-big.filled { background-image: var(--tube); }
 .swatch-big.pop { transform: scale(1.015); }
-.swatch-day { position: absolute; top: 14px; left: 18px; font-size: 40px; font-weight: 900; line-height: .95; max-width: 80%; }
+.swatch-day { position: absolute; top: 14px; left: 18px; font-size: 30px; font-weight: 700; line-height: 1.05; letter-spacing: -.02em; max-width: 80%; }
 .swatch-hex {
   position: absolute; bottom: 14px; right: 14px; padding: 6px 12px;
   font: 500 15px var(--mono); letter-spacing: .08em; color: var(--chrome-ink);
   background: var(--chrome); border: 2px solid #16141A; border-radius: 999px;
-  box-shadow: var(--raised), 0 6px 14px -6px rgba(0, 0, 0, .5);
+  box-shadow: none;
 }
 .swatch-hex:empty { display: none; }
 .swatch-empty {
   position: absolute; inset: 0; display: grid; place-items: center;
-  color: var(--muted); font-size: 18px; font-weight: 800; box-shadow: var(--sunk);
+  color: var(--muted); font-size: 18px; font-weight: 600; box-shadow: var(--sunk);
 }
 .flutter {
   position: absolute; left: 50%; top: 55%; font-size: 30px; pointer-events: none;
@@ -201,7 +198,7 @@ h2 { font-size: 26px; font-weight: 900; line-height: 1; margin: 36px 0 14px; }
 
 /* ---- diary ---- */
 .month { margin-bottom: 26px; }
-.month h3 { font-size: 17px; font-weight: 800; color: var(--muted); margin: 0 0 10px; }
+.month h3 { font-size: 17px; font-weight: 600; color: var(--muted); margin: 0 0 10px; }
 .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; }
 .cal .wd { font-size: 12px; font-weight: 700; text-align: center; color: var(--muted); }
 .day {
@@ -212,7 +209,7 @@ h2 { font-size: 26px; font-weight: 900; line-height: 1; margin: 36px 0 14px; }
 }
 .day:hover { transform: translateY(-2px); }
 .day.has {
-  border: 2px solid #16141A; background-image: var(--tube); font-weight: 800;
+  border: 2px solid #16141A; background-image: var(--tube); font-weight: 600;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 6px 12px -6px rgba(0, 0, 0, .5);
 }
 .day.future { opacity: .35; cursor: default; }
@@ -226,7 +223,7 @@ h2 { font-size: 26px; font-weight: 900; line-height: 1; margin: 36px 0 14px; }
   border-radius: var(--radius); padding: 16px; margin-bottom: 24px;
   box-shadow: var(--drop);
 }
-.name-input { font-size: 20px; font-weight: 800; margin-bottom: 12px; }
+.name-input { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
 .strip {
   position: relative; display: flex; height: 64px; border-radius: 18px; overflow: hidden;
   background: var(--empty); border: var(--stroke) solid #16141A;
@@ -246,11 +243,11 @@ h2 { font-size: 26px; font-weight: 900; line-height: 1; margin: 36px 0 14px; }
 .pick .n {
   position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; border-radius: 50%;
   background: var(--chrome); color: var(--chrome-ink); border: 2px solid #16141A;
-  display: grid; place-items: center; font-size: 12px; font-weight: 900;
+  display: grid; place-items: center; font-size: 12px; font-weight: 700;
 }
 
 .suggestion { margin-bottom: 20px; }
-.suggestion .rule { font-size: 15px; font-weight: 800; color: var(--muted); margin: 0 0 8px; }
+.suggestion .rule { font-size: 15px; font-weight: 600; color: var(--muted); margin: 0 0 8px; }
 .suggestion .strip button { border: 0; cursor: pointer; }
 .suggestion .strip button + button { border-left: 2px solid #16141A; }
 .suggestion .strip button:hover { flex: 1.4; }
@@ -260,14 +257,14 @@ h2 { font-size: 26px; font-weight: 900; line-height: 1; margin: 36px 0 14px; }
 .pal-card { margin-bottom: 22px; }
 .pal-card .strip { height: 88px; cursor: pointer; }
 .pal-card .meta { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
-.pal-card .name { font-size: 20px; font-weight: 900; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pal-card .name { font-size: 18px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pal-card .tag { font-size: 13px; color: var(--muted); }
 .pal-card .mini {
   border: 2px solid transparent; background: none; color: var(--muted); cursor: pointer;
-  padding: 5px 9px; border-radius: 999px; font-size: 14px; font-weight: 800;
+  padding: 5px 9px; border-radius: 999px; font-size: 14px; font-weight: 600;
 }
 .pal-card .mini:hover { border-color: var(--ink); color: var(--ink); }
-.empty-note { color: var(--muted); font-size: 18px; font-weight: 800; text-align: center; padding: 40px 10px; }
+.empty-note { color: var(--muted); font-size: 18px; font-weight: 600; text-align: center; padding: 40px 10px; }
 
 /* ---- visual ---- */
 body.visual-on { padding: 0; overflow: hidden; background: #000; }
@@ -281,7 +278,7 @@ body.visual-on .top, body.visual-on .tabs { display: none; }
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center;
   padding: 10px; border-radius: 26px; color: var(--chrome-ink);
   background: var(--chrome); border: var(--stroke) solid #16141A;
-  box-shadow: var(--raised), 0 18px 40px -16px rgba(0, 0, 0, .8);
+  box-shadow: 0 18px 40px -16px rgba(0, 0, 0, .8);
   transition: opacity .5s ease, transform .5s ease;
 }
 .vis-ui.hide { opacity: 0; transform: translate(-50%, 12px); pointer-events: none; }
@@ -296,17 +293,16 @@ body.visual-on .top, body.visual-on .tabs { display: none; }
 .seg::-webkit-scrollbar { display: none; }
 .seg button {
   flex: none; border: 0; background: transparent; color: #4A4650; padding: 6px 14px;
-  border-radius: 999px; cursor: pointer; font-size: 16px; font-weight: 800;
+  border-radius: 999px; cursor: pointer; font-size: 16px; font-weight: 600;
 }
 .seg button.on {
   background-color: #16141A; color: #F4F2EE;
-  background-image: linear-gradient(180deg, rgba(255,255,255,.22), transparent 45%, rgba(0,0,0,.4));
 }
 .vis-btns { display: flex; gap: 6px; }
 .round {
   width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 16px;
   border: 2px solid #16141A; background: #FBFAF7; color: #16141A;
-  box-shadow: var(--raised), 0 4px 8px -4px rgba(0, 0, 0, .5);
+  box-shadow: none;
 }
 
 /* ---- dialog & toast ---- */
@@ -322,8 +318,8 @@ dialog form { margin-top: 14px; }
   position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom)); z-index: 50;
   transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
   background: var(--chrome); color: var(--chrome-ink); border: var(--stroke) solid #16141A;
-  padding: 9px 18px; border-radius: 999px; font-size: 16px; font-weight: 800;
-  box-shadow: var(--raised), var(--drop);
+  padding: 9px 18px; border-radius: 999px; font-size: 16px; font-weight: 600;
+  box-shadow: none;
   transition: opacity .3s, transform .3s; max-width: calc(100% - 32px); text-align: center;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }

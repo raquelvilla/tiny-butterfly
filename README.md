@@ -9,7 +9,9 @@ A colour a day, folded into palettes and liquid light.
   tetradic). Tap a colour in a suggestion to swap it. *Keep* saves it, and *Tweak* opens it in the builder.
 - **Visual**: a palette becomes a full-screen shader. Tap ◎ to save a still. Each style answers touch
   in its own way:
-  - **liquid** / **storm**: domain-warped noise, gentle or wild. Taps ripple out, and drags leave a trail of ripples.
+  - **liquid**: smooth domain-warped noise. Your finger draws a thick liquid-chrome trail that bends
+    the colours under it and slowly melts away.
+  - **storm**: fast, finely detailed noise. Hold a finger down and forked lightning crackles out of it.
   - **ribs**: vertical stripes, each a slice of the palette from dark to light. Holding breaks them
     into stepped tiles that heal when you let go. Dragging sideways adds or removes ribs.
   - **pills**: columns of glowing ellipses on charcoal that swell in a slow wave.
