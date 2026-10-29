@@ -12,8 +12,7 @@ const Visual = (() => {
   const FIELD = 2.2; // noise field units across the screen height
   const MAX_COLS = 6;
   const TRAIL_SCALE = 0.5; // trail buffer resolution relative to the canvas
-  const BRUSH = 0.038;     // trail thickness, in screen heights (a stroke swells from ~0.35x to ~1.6x)
-  const SWELL = 0.7;       // stroke length (screen heights) over which the brush reaches full width
+  const BRUSH = 0.038;     // trail thickness, in screen heights
   const STRIKES = 3;        // lightning strikes alive at once (each lingers ~0.4s)
   const STRIKE_EVERY = 140; // ms between strikes while held
   const SEG_PER = 56;       // traced line segments per strike
@@ -57,9 +56,15 @@ void main(){
     h = hn;
   }
   if (uDecay > .5 && uDecay < 1.5) {
-    v = v * .4
+    // Spread: each frame the trail grows a little into its surroundings (like ink spreading), so
+    // older parts of a stroke are wider than where your finger just was.
+    vec2 o = uTexel * .7;
+    float n4 = max(max(texture2D(uPrev, uv + vec2(o.x, 0.)).r, texture2D(uPrev, uv - vec2(o.x, 0.)).r),
+                   max(texture2D(uPrev, uv + vec2(0., o.y)).r, texture2D(uPrev, uv - vec2(0., o.y)).r));
+    v = max(v * .4
       + (texture2D(uPrev, uv + vec2(uTexel.x, 0.)).r + texture2D(uPrev, uv - vec2(uTexel.x, 0.)).r
-       + texture2D(uPrev, uv + vec2(0., uTexel.y)).r + texture2D(uPrev, uv - vec2(0., uTexel.y)).r) * .15;
+       + texture2D(uPrev, uv + vec2(0., uTexel.y)).r + texture2D(uPrev, uv - vec2(0., uTexel.y)).r) * .15,
+      n4 * .985);
     v = max(v * .985 - .0025, 0.);   // the subtraction makes sure 8-bit values reach zero
   }
   vec2 asp = vec2(uSize.x / uSize.y, 1.);
@@ -256,12 +261,12 @@ float density(vec2 q, float t, float oct){
   float puff = billow(m * .75, t);
   PUFF = puff;
   float det = fbm(m * 3.5 - vec2(t * .3, 0.), max(oct - 3., 1.));
-  return smoothstep(.615, .655, base * .6 + puff * .6 + (det - .5) * .14);   // crisp sunlit edges
+  return smoothstep(.57, .69, base * .6 + puff * .6 + (det - .5) * .12);   // soft edge, solid body
 }
 // The same masses without the billows: cheap enough to sample many times for god rays.
 float coverage(vec2 q, float t){
   vec2 m = q + vec2(t * .6, t * .1);
-  return smoothstep(.615, .655, fbm(m * .5, 3.) * .6 + .33);
+  return smoothstep(.57, .69, fbm(m * .5, 3.) * .6 + .33);
 }
 // Filmic tone curve (ACES approximation): rolls highlights off like a camera instead of clipping.
 vec3 filmic(vec3 x){
@@ -297,11 +302,15 @@ void main(){
     float pf = PUFF;
     float acc = 0.;
     float stepLen = sc * .035 * calm;            // shadow steps fade out at the sun
-    for (int i = 1; i <= 3; i++) acc += density(q + toSun * stepLen * float(i) * 1.3, tt, oct) * 1.3;
-    float lit = exp(-acc * .7);
+    // four shadow samples toward the sun, each pixel starting at a random offset so shading is smooth
+    float jit = hash(gl_FragCoord.xy + fl * 7.1 + fract(tt) * 13.);
+    for (int i = 1; i <= 4; i++) acc += density(q + toSun * stepLen * (float(i) - jit), tt, oct);
+    float lit = exp(-acc * .95);
     float rim = (1. - d) * lit;
-    vec3 c = mix(shadowCol, litCol, lit) * (.72 + .5 * smoothstep(.35, .85, pf))   // puffs: bright domes, dark creases
-           + palette(1.) * rim * sun * .8 + rim * .06;
+    vec3 c = mix(shadowCol, litCol, lit)
+           * (.8 + .35 * smoothstep(.35, .85, pf))      // puffs: bright domes, darker creases
+           * mix(1.08, .78, d)                         // thick cores sit darker, thin edges glow
+           + palette(1.) * rim * sun * .8 + rim * .08;
     float alpha = d * mix(.85, .97, fl);
     col = mix(col, c, alpha);
     cover = max(cover, alpha);
@@ -426,8 +435,7 @@ void main(){
   const cur = { speed: style.speed, warp: style.warp, bright: style.bright };
   const touch = { x: 0.5, y: 0.5, z: 0, down: 0, id: null };
   const path = []; // finger points [x, y, brush radius] not yet stamped (capped so a stall can't pile up)
-  let stroke = 0;  // how far the current stroke has travelled, in screen heights
-  const brushAt = () => BRUSH * (0.35 + 1.25 * Math.min(1, stroke / SWELL));
+  const brushAt = () => BRUSH * 0.75; // constant; the trail itself spreads as it ages (see TRAIL)
   const strikes = Array.from({ length: STRIKES }, () => ({ age: 99 }));
   let strikeAt = 0;
   const segData = new Float32Array(MAXSEG * 2 * 4); // the uSegs texture's contents
@@ -783,7 +791,6 @@ void main(){
       Object.assign(touch, { x, y, id: e.pointerId });
       touch.down++;
       path.length = 0;
-      stroke = 0;
       path.push([x, y, brushAt()], [x, y, brushAt()]); // a dot even if the finger never moves
       if (style.prog === 'vapour') {
         const k = oldest(ice.filter((q) => !q.auto));
@@ -802,7 +809,6 @@ void main(){
       }
       Object.assign(touch, { x, y });
       ice.forEach((k) => { if (k.held) Object.assign(k, { x, y }); });
-      stroke += len;
       if (path.length < 48) path.push([x, y, brushAt()]);
     });
     const lift = (e) => {
