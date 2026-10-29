@@ -4,7 +4,7 @@ A colour a day, folded into palettes and liquid light.
 
 - **Today**: type a hex code (or use the little picker) and add a word or note.
   The diary below shows every day you've kept, month by month. Tap any day to see or edit it.
-- **Palettes**: tap 3–6 of your colours to make a palette. Stuck? **✦ Inspire me** finds palettes in
+- **Palettes**: tap 3–6 of your colours to make a palette. Stuck? **Harmonies** finds palettes in
   your own colours using colour harmony (analogous, complementary, triadic, split-complementary,
   tetradic). Tap a colour in a suggestion to swap it. *Keep* saves it, and *Tweak* opens it in the builder.
 - **Visual**: a palette becomes a full-screen shader. Tap ◎ to save a still. Each style answers touch

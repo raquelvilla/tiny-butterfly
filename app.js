@@ -224,7 +224,7 @@
         className: 'empty-note',
         textContent: n < 3
           ? `Keep a few colours first — you have ${n}. Palettes need at least 3.`
-          : 'No palettes yet. Make one, or let ✦ Inspire me find some.',
+          : 'No palettes yet. Make one, or look through Harmonies.',
       }));
       return;
     }
@@ -232,7 +232,7 @@
       const s = strip(paletteHexes(p));
       s.title = 'Play';
       s.addEventListener('click', () => play(p.id));
-      const tag = p.source === 'harmony' ? el('span', { className: 'tag', textContent: '✦' }) : '';
+      const tag = p.source === 'harmony' ? el('span', { className: 'tag', textContent: 'harmony' }) : '';
       list.append(el('div', { className: 'pal-card' }, s,
         el('div', { className: 'meta' },
           el('span', { className: 'name', textContent: p.name || 'untitled' }), tag,
@@ -307,7 +307,7 @@
     toast('Palette saved');
   });
 
-  // inspire me
+  // harmonies
   let suggestions = [];
 
   function inspire() {
