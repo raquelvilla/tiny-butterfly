@@ -69,14 +69,16 @@ float noise(vec2 p){
   return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
 }
 // Fractal noise with a variable number of octaves (more = finer detail), normalised to 0..1.
+// A fractional count fades the last octave in, so detail can change smoothly across the screen.
 float fbm(vec2 p, float oct){
-  float v = 0., a = .5;
+  float v = 0., a = .5, sum = 0.;
   mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
   for (int i = 0; i < 8; i++) {
-    if (float(i) >= oct) break;
-    v += a * noise(p); p = m * p; a *= .5;
+    float w = clamp(oct - float(i), 0., 1.);
+    if (w <= 0.) break;
+    v += a * w * noise(p); sum += a * w; p = m * p; a *= .5;
   }
-  return v / (1. - 2. * a);
+  return v / sum;
 }
 vec3 palette(float x){
   x = clamp(x, 0., 1.) * (uCount - 1.);
@@ -308,13 +310,15 @@ void main(){
 }`,
 
     // Soft volumetric clouds: two drifting layers of billowy noise over a palette sky. Each layer
-    // marches a few steps toward the sun to shadow itself, so thick parts darken and thin edges glow
-    // (a silver lining). The sun sits where your finger last was.
+    // looks a few steps toward the sun to shadow itself, so thick parts darken and thin edges glow
+    // (a silver lining). Near the sun those steps shrink and the detail softens, so the centre is a
+    // gentle blur rather than a point where every direction converges. God rays come from checking
+    // how much cloud lies between each pixel and the sun. The sun sits where your finger last was.
     clouds: `
 uniform vec2 uLight;   // sun position, uv
-float density(vec2 q, float t){
-  float f = fbm(q + vec2(t * .6, t * .1), 6.);
-  float g = fbm(q * 2.3 - vec2(t * .3, 0.), 4.);
+float density(vec2 q, float t, float oct){
+  float f = fbm(q + vec2(t * .6, t * .1), oct);
+  float g = fbm(q * 2.3 - vec2(t * .3, 0.), max(oct - 2., 1.));
   return smoothstep(.47, .66, f * .75 + g * .35);
 }
 void main(){
@@ -322,26 +326,46 @@ void main(){
   vec2 asp = vec2(uRes.x / uRes.y, 1.);
   vec2 p = uv * asp, lp = uLight * asp;
   float t = uTime;
+  vec2 toL = lp - p;
+  float dist = length(toL);
+  float calm = smoothstep(0., .28, dist);        // 0 at the sun, 1 away from it
+  float oct = mix(2., 6., calm);                 // softer, blurrier clouds near the sun
+  vec2 toSun = toL / max(dist, 1e-4);
+
   vec3 col = mix(palette(.45), palette(.12), uv.y) * .85;
-  float sun = exp(-dot(p - lp, p - lp) * 6.);
+  float sun = exp(-dist * dist * 6.);
   col += palette(1.) * sun * .6;
-  vec2 toSun = normalize(lp - p + 1e-4);
   vec3 litCol = mix(palette(.85), vec3(1.), .6);
   vec3 shadowCol = mix(palette(.4), litCol, .45);
+  float cover = 0.;
   for (int L = 0; L < 2; L++) {
     float fl = float(L);
     float sc = mix(1.6, 2.4, fl);
     vec2 q = p * sc + vec2(fl * 7.3, fl * 3.1);
     float tt = t * (1. + fl * .6);
-    float d = density(q, tt);
+    float d = density(q, tt, oct);
     if (d < .001) continue;
     float acc = 0.;
-    for (int i = 1; i <= 4; i++) acc += density(q + toSun * sc * .05 * float(i), tt);
+    float stepLen = sc * .05 * calm;             // shadow steps fade out at the sun
+    for (int i = 1; i <= 4; i++) acc += density(q + toSun * stepLen * float(i), tt, oct);
     float lit = exp(-acc * .8);
     float rim = (1. - d) * lit;
     vec3 c = mix(shadowCol, litCol, lit) + palette(1.) * rim * sun * 1.5 + rim * .15;
-    col = mix(col, c, d * mix(.85, .97, fl));
+    float alpha = d * mix(.85, .97, fl);
+    col = mix(col, c, alpha);
+    cover = max(cover, alpha);
   }
+
+  // God rays: walk toward the sun through the front layer; open sky lets light through.
+  float open = 0.;
+  for (int i = 0; i < 10; i++) {
+    vec2 sp = p + toL * (float(i) + .5) / 10.;
+    open += 1. - density(sp * 2.4 + vec2(7.3, 3.1), t * 1.6, 3.);
+  }
+  open /= 10.;
+  float rays = pow(open, 3.) * exp(-dist * 1.6);
+  col += mix(palette(1.), vec3(1.), .5) * rays * .45 * (1. - cover * .6);
+  col += palette(1.) * exp(-dist * dist * 40.) * .25;   // soft bright core
   gl_FragColor = vec4(finish(col, .15, .02), 1.);
 }`,
   };
