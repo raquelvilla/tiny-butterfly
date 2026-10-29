@@ -230,11 +230,12 @@ void main(){
   gl_FragColor = vec4(floor(v) / 255., fract(v), 0., 1.);
 }`,
 
-    // Soft volumetric clouds: two drifting layers of billowy noise over a palette sky. Each layer
-    // looks a few steps toward the sun to shadow itself, so thick parts darken and thin edges glow
-    // (a silver lining). Near the sun those steps shrink and the detail softens, so the centre is a
-    // gentle blur rather than a point where every direction converges. God rays come from checking
-    // how much cloud lies between each pixel and the sun. The sun sits where your finger last was.
+    // Cumulus seen from the side: three rows (small and pale far back and high, big and bold low in
+    // front). Each row sits on a nearly flat base; towers rise from it where a broad noise says so,
+    // and cellular "cauliflower" billows make their tops lumpy. Shading comes from height in the
+    // cloud (bright tops, darker bases) and from each puff (bright domes, darker creases); far rows
+    // fade toward the sky. A silver lining glows on thin cloud near the sun, and god rays look
+    // through the towers toward the sun, which sits where your finger last was.
     clouds: `
 uniform vec2 uLight;   // sun position, uv
 // Cellular (Worley) noise: distance to the nearest of a grid of slowly churning points.
@@ -254,22 +255,21 @@ float worley(vec2 p, float t){
 float billow(vec2 p, float t){
   return (1. - worley(p, t)) * .55 + (1. - worley(p * 2.1 + 3.7, t)) * .3 + (1. - worley(p * 4.4 - 1.9, t)) * .15;
 }
-// Cumulus: a broad noise decides where the masses are, the billows make them puffy, and fine
-// detail (fewer octaves near the sun) erodes the edges. PUFF keeps the last billow value, so the
-// caller can shade each puff (bright rounded centres, darker creases).
-float PUFF;
-float density(vec2 q, float t, float oct){
-  vec2 m = q + vec2(t * .6, t * .1);
-  float base = fbm(m * .5, 3.);
-  float puff = billow(m * .75, t);
-  PUFF = puff;
-  float det = fbm(m * 3.5 - vec2(t * .3, 0.), max(oct - 3., 1.));
-  return smoothstep(.57, .69, base * .6 + puff * .6 + (det - .5) * .12);   // soft edge, solid body
+// How tall the towers of a row are at this x (screen heights; 0 = clear sky).
+float towers(float x, float base, float scale){
+  return smoothstep(.5, .74, fbm(vec2(x * .9, base * 7.), 4.)) * .38 / scale;
 }
-// The same masses without the billows: cheap enough to sample many times for god rays.
-float coverage(vec2 q, float t){
-  vec2 m = q + vec2(t * .6, t * .1);
-  return smoothstep(.57, .69, fbm(m * .5, 3.) * .6 + .33);
+// Density of one row at p. v: 0 at the cloud's base .. 1 at its top; puff: billow value there.
+float cumulus(vec2 p, float base, float scale, float drift, float t, out float v, out float puff){
+  float x = p.x * scale + drift;
+  float hgt = towers(x, base, scale);
+  float y = p.y - base;
+  puff = billow(vec2(x, y * scale) * 5., t);
+  v = clamp(y / max(hgt, 1e-3), 0., 1.);
+  float top = hgt * (.72 + .5 * puff);                          // lumpy, heaped top
+  float body = smoothstep(top, top - .02, y);
+  float bottom = smoothstep(-.006, .012, y + (puff - .6) * .015);  // nearly flat base
+  return body * bottom * step(.002, hgt);
 }
 // Filmic tone curve (ACES approximation): rolls highlights off like a camera instead of clipping.
 vec3 filmic(vec3 x){
@@ -283,9 +283,6 @@ void main(){
   float t = uTime;
   vec2 toL = lp - p;
   float dist = length(toL);
-  float calm = smoothstep(0., .28, dist);        // 0 at the sun, 1 away from it
-  float oct = mix(3., 7., calm);                 // softer, blurrier clouds near the sun
-  vec2 toSun = toL / max(dist, 1e-4);
 
   vec3 sky = mix(palette(.45), palette(.12), uv.y);
   vec3 col = mix(sky, vec3(dot(sky, vec3(.3, .59, .11))), .12) * .68;  // deep, slightly desaturated sky
@@ -293,46 +290,46 @@ void main(){
   vec3 sunCol = mix(palette(1.), vec3(1., .96, .88), .55);
   col += sunCol * (sun * .6 + exp(-dist * 3.6) * .3);         // warm halo
   vec3 litCol = mix(palette(.85), vec3(1.), .7);
-  vec3 shadowCol = mix(palette(.3), litCol, .5) * .8;
+  vec3 shadowCol = mix(palette(.3), litCol, .25) * .7;
+  vec3 skyCol = col;
   float cover = 0.;
-  for (int L = 0; L < 2; L++) {
-    float fl = float(L);
-    float sc = mix(2., 3., fl);
-    vec2 q = p * sc + vec2(fl * 7.3, fl * 3.1);
-    float tt = t * (1. + fl * .6);
-    float d = density(q, tt, oct);
-    if (d < .001) continue;
-    float pf = PUFF;
-    float acc = 0.;
-    float stepLen = sc * .035 * calm;            // shadow steps fade out at the sun
-    // four shadow samples toward the sun, each pixel starting at a random offset so shading is smooth
-    float jit = hash(gl_FragCoord.xy + fl * 7.1 + fract(tt) * 13.);
-    for (int i = 1; i <= 4; i++) acc += density(q + toSun * stepLen * (float(i) - jit), tt, oct);
-    float lit = exp(-acc * .95);
-    float rim = (1. - d) * lit;
-    vec3 c = mix(shadowCol, litCol, lit)
-           * (.8 + .35 * smoothstep(.35, .85, pf))      // puffs: bright domes, darker creases
-           * mix(1.08, .78, d)                         // thick cores sit darker, thin edges glow
-           + palette(1.) * rim * sun * .8 + rim * .08;
-    float alpha = d * mix(.85, .97, fl);
-    col = mix(col, c, alpha);
-    cover = max(cover, alpha);
+  for (int L = 0; L < 3; L++) {
+    float fl = float(L) / 2.;                    // 0 = far row .. 1 = near row
+    float base = mix(.6, .14, fl);
+    float scale = mix(2.6, 1.2, fl);
+    float v, pf;
+    float d = cumulus(p, base, scale, t * mix(.12, .3, fl) + fl * 13.7, t, v, pf);
+    if (d < .002) continue;
+    float light = mix(.25, 1., smoothstep(0., .9, v))          // bright tops, darker bases
+                * (.68 + .45 * smoothstep(.35, .85, pf));      // bright domes, darker creases
+    vec3 c = mix(shadowCol, litCol, light);
+    c += sunCol * (1. - d) * sun * 1.4;                        // silver lining on thin cloud near the sun
+    c = mix(c, skyCol, .4 * (1. - fl));                        // far rows fade into the sky
+    col = mix(col, c, d);
+    cover = max(cover, d);
   }
 
-  // God rays: walk toward the sun through the front layer; open sky lets light through.
-  // 24 samples, each pixel starting at a random offset so leftover stepping becomes fine grain.
+  // God rays: walk toward the sun checking the near rows' towers; open sky lets light through.
+  // Each pixel starts at a random offset so leftover stepping becomes fine grain.
   float open = 0.;
   float jitter = hash(gl_FragCoord.xy + fract(t) * 37.);
-  for (int i = 0; i < 24; i++) {
-    vec2 sp = p + toL * (float(i) + jitter) / 24.;
-    open += 1. - coverage(sp * 3. + vec2(7.3, 3.1), t * 1.6);
+  for (int i = 0; i < 20; i++) {
+    vec2 sp = p + toL * (float(i) + jitter) / 20.;
+    float blocked = 0.;
+    for (int L = 1; L < 3; L++) {
+      float fl = float(L) / 2.;
+      float base = mix(.6, .14, fl), scale = mix(2.6, 1.2, fl);
+      float y = sp.y - base;
+      float hgt = towers(sp.x * scale + t * mix(.12, .3, fl) + fl * 13.7, base, scale);
+      blocked = max(blocked, step(0., y) * smoothstep(hgt, hgt * .7, y) * step(.002, hgt));
+    }
+    open += 1. - blocked;
   }
-  open /= 24.;
+  open /= 20.;
   float rays = pow(open, 3.) * exp(-dist * 1.6);
   col += sunCol * rays * .4 * (1. - cover * .5);
-  // the sun itself: a soft bright disc that shows through thin cloud and dims behind thick
   // the sun itself: a soft disc with a hot core, rolled off (not clipped) by the filmic curve below
-  col += sunCol * (smoothstep(.045, .012, dist) * 1.8 + exp(-dist * dist * 450.) * 3.) * (1. - cover * .45);
+  col += sunCol * (smoothstep(.045, .012, dist) * 1.8 + exp(-dist * dist * 450.) * 3.) * (1. - cover * .6);
   gl_FragColor = vec4(finish(filmic(col * 1.15), .2, .018), 1.);
 }`,
 
