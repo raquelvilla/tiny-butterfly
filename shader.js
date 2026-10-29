@@ -3,7 +3,7 @@
 //   liquid — your finger draws a liquid-chrome trail (a feedback buffer) that refracts the colours
 //            underneath and melts away
 //            (taps and drawing also send ripples through the colours)
-//   storm  — holding a finger down strikes forked lightning that grows, lingers and fades
+//   storm  — holding a finger down sends lightning through the noise's own veins
 //   ribs   — the ribs around your finger break into stepped tiles; dragging sideways changes their count
 //   pills  — (no touch yet)
 const Visual = (() => {
@@ -51,6 +51,7 @@ void main(){
 }`;
 
   const COMMON = `
+#extension GL_OES_standard_derivatives : enable
 precision highp float;
 uniform vec2 uRes;
 uniform float uTime, uWarp, uBright, uCount, uParam;
@@ -83,12 +84,12 @@ vec3 palette(float x){
   }
   return c;
 }
-// The domain-warped colour field shared by liquid and storm.
-vec3 field(vec2 p, float oct){
+// The domain-warped colour field shared by liquid and storm; f is its underlying noise value.
+vec3 field(vec2 p, float oct, out float f){
   float t = uTime, w = uWarp;
   vec2 q = vec2(fbm(p + vec2(0., t * .12), oct), fbm(p + vec2(5.2, 1.3) - t * .1, oct));
   vec2 r = vec2(fbm(p + w * q + vec2(1.7, 9.2) + t * .15, oct), fbm(p + w * q + vec2(8.3, 2.8) - t * .13, oct));
-  float f = fbm(p + w * r, oct);
+  f = fbm(p + w * r, oct);
   float x = smoothstep(.3, .7, f + (r.x - .5) * .45);
   return palette(x) * (.9 + .2 * smoothstep(.3, .8, f));
 }
@@ -140,7 +141,8 @@ void main(){
     shade += cos(phase) * packet * fade;
   }
 
-  vec3 col = field(p, 3.);
+  float f;
+  vec3 col = field(p, 3., f);
   col *= 1. + shade * .14;
   col += pow(max(shade, 0.), 3.) * .1;
 
@@ -156,64 +158,41 @@ void main(){
   gl_FragColor = vec4(finish(col, .18, .03), 1.);
 }`,
 
-    // Fine, detailed warped noise. Holding a finger down strikes lightning: each strike's bolts grow
-    // out from the finger (leaning the way you drag), fork, then linger and fade like an afterimage,
-    // shedding embers. Bolts are thin white cores in a glow tinted by the palette's lightest colour.
+    // Fine, detailed warped noise that conducts lightning. Each strike picks one contour level of
+    // the noise itself and lights them as thin crackling lines (broken into flickering segments),
+    // over an area that grows out from the finger, leans the way you drag, then fades.
     storm: `
 uniform vec4 uStrikes[${STRIKES}];  // xy = origin uv, z = seed, w = age in seconds
 uniform vec3 uDir;                  // xy = drag direction, z = 0..1 how much you're moving
-// (core, glow) of one bolt that has grown to 'reach' (0..1) of its length
-vec2 bolt(vec2 p, vec2 o, float ang, float len, float reach, float seed){
-  vec2 dir = vec2(cos(ang), sin(ang)), side = vec2(-dir.y, dir.x);
-  vec2 d = p - o;
-  float s = dot(d, dir);
-  float end = len * reach;
-  if (s < 0. || s > end) return vec2(0.);
-  float jag = (noise(vec2(s * 6., seed)) - .5) * .18
-            + (noise(vec2(s * 21., seed + 7.)) - .5) * .06
-            + (noise(vec2(s * 64., seed + 3.)) - .5) * .018;
-  float dd = abs(dot(d, side) - jag * smoothstep(0., .08, s));
-  float taper = 1. - s / len;
-  float tip = smoothstep(end - .03, end, s) * (1. - reach);   // bright leading tip while growing
-  return vec2(exp(-dd * 1100.) * (taper + tip * 2.), exp(-dd * 140.) * taper);
-}
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 asp = vec2(uRes.x / uRes.y, 1.);
-  vec3 col = field(uv * asp * FIELD * 1.35, 7.);
+  float f;
+  vec3 col = field(uv * asp * FIELD * 1.35, 7., f);
+  float px = max(fwidth(f), 1e-4);      // how much f changes per pixel, for pixel-width lines
   vec2 p = uv * asp;
-  vec2 light = vec2(0.);
-  float embers = 0., flash = 0.;
-  float moveAng = atan(uDir.y, uDir.x + 1e-5);
+  float core = 0., glow = 0., lift = 0.;
   for (int k = 0; k < ${STRIKES}; k++) {
     vec4 S = uStrikes[k];
     float a = S.w;
     if (a > .7) continue;
-    vec2 o = S.xy * asp;
     float seed = S.z;
-    float reach = smoothstep(0., .1, a);
-    float life = 1. - smoothstep(.06, .7, a);
-    for (int i = 0; i < 4; i++) {
-      float fi = float(i);
-      float rnd = hash(vec2(fi, seed));
-      float ang = mix(rnd * 6.2832, moveAng + (rnd - .5) * 1.4, uDir.z);
-      float len = .18 + .32 * hash(vec2(seed, fi + 4.));
-      light += bolt(p, o, ang, len, reach, seed + fi * 13.) * life;
-      vec2 fo = o + vec2(cos(ang), sin(ang)) * len * .4;
-      float fang = ang + (hash(vec2(fi, seed + 2.)) - .5) * 1.4;
-      light += .6 * bolt(p, fo, fang, len * .5, smoothstep(.35, 1., reach), seed + fi * 29.) * life;
-    }
-    for (int i = 0; i < 8; i++) {
-      float fi = float(i);
-      float ea = hash(vec2(fi, seed + 5.)) * 6.2832;
-      vec2 ep = o + vec2(cos(ea), sin(ea)) * (.03 + a * (.2 + .3 * hash(vec2(seed + 9., fi))));
-      embers += exp(-length(p - ep) * 420.) * life;
-    }
-    flash += exp(-dot(p - o, p - o) * 30.) * (1. - smoothstep(0., .12, a));
+    float reach = smoothstep(0., .15, a);
+    float life = 1. - smoothstep(.08, .7, a);
+    vec2 o = S.xy * asp + uDir.xy * uDir.z * reach * .18;
+    float mask = smoothstep(.06 + .26 * reach, 0., length(p - o)) * life;
+    if (mask < .002) continue;
+    float level = .35 + .3 * hash(vec2(seed, 1.));
+    float d = abs(f - level) / px;   // distance to this strike's contour of the noise, in pixels
+    float broken = smoothstep(.5, .72, noise(p * 11. + seed * 7.));
+    core += smoothstep(1.4, 0., d) * mask * broken;
+    glow += exp(-d * .22) * mask * broken;
+    lift += mask * (1. - smoothstep(0., .3, a));
   }
-  vec3 glow = palette(1.) * 1.25 + .08;
-  col += glow * (light.y * .5 + embers * 1.2 + flash * .16);
-  col += mix(glow, vec3(1.), .75) * light.x;
+  vec3 tint = palette(1.) * 1.2 + .08;
+  col *= 1. + lift * .15;
+  col += tint * glow * .22;
+  col += mix(tint, vec3(1.), .8) * min(core, 1.4);
   gl_FragColor = vec4(finish(col, .22, .025), 1.);
 }`,
 
@@ -387,6 +366,7 @@ void main(){
     canvas = c;
     gl = c.getContext('webgl', { preserveDrawingBuffer: true, antialias: false, alpha: false });
     if (!gl) return false;
+    gl.getExtension('OES_standard_derivatives'); // fwidth() for storm's pixel-width lightning
     try {
       gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);

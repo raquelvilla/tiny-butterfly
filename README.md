@@ -11,8 +11,8 @@ A colour a day, folded into palettes and liquid light.
   in its own way:
   - **liquid**: smooth domain-warped noise. Your finger draws a thick liquid-chrome trail that bends
     the colours under it and slowly melts away. Taps (and drawing) send water ripples out.
-  - **storm**: fast, finely detailed noise. Hold a finger down and thin forked lightning grows out of
-    it, leaning the way you drag, then lingers and fades, shedding embers.
+  - **storm**: fast, finely detailed noise. Hold a finger down and lightning runs through the noise's
+    own veins around it, flickering from vein to vein and leaning the way you drag.
   - **ribs**: vertical stripes, each a slice of the palette from dark to light. Holding breaks them
     into stepped tiles that heal when you let go. Dragging sideways adds or removes ribs.
   - **pills**: columns of glowing ellipses on charcoal that swell in a slow wave.
