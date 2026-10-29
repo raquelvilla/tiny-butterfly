@@ -14,12 +14,12 @@ A colour a day, folded into palettes and liquid light.
     tap, hold or draw.
   - **storm**: fast, finely detailed noise. Hold a finger down and lightning runs along the noise's own
     paths from it, with branches peeling off onto neighbouring veins; it heads the way you drag.
-  - **ribs**: vertical stripes, each a slice of the palette from dark to light. Holding breaks them
-    into stepped tiles that heal when you let go. Dragging sideways adds or removes ribs.
-  - **pills**: columns of glowing ellipses on charcoal that swell in a slow wave. Touch or drag to
+  - **pills**: rows of glowing ellipses filling the frame on charcoal, swelling in slow waves. Touch or drag to
     spawn new pills; they snap into the columns, drift up and fade after a few seconds.
   - **clouds**: soft volumetric clouds in two drifting layers over a palette sky, self-shadowed with
     glowing edges. Your finger moves the sun.
+  - **vapour**: glowing pieces of dry ice sublimating into fibrous vapour on black, coloured like heat
+    through your palette. Tap to drop a piece; drag to carry it and stream its vapour behind.
 
 ## Run it
 
