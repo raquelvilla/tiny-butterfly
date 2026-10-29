@@ -2,10 +2,9 @@
 // Each style is its own fragment shader sharing a common header, and each answers touch its own way:
 //   liquid — your finger draws a liquid-chrome trail (a feedback buffer) that refracts the colours
 //            underneath and melts away
-//            (taps and drawing also send ripples through the colours)
+//            (and pushes a simulated water surface, so chrome waves spread out from the stroke)
 //   storm  — holding a finger down sends lightning along the noise's own paths (traced on the CPU
 //            from a small read-back of the noise, then drawn as glowing segments)
-//   pills  — your finger spawns pills that grow into the nearest column, drift and fade
 //   clouds — soft volumetric clouds; your finger moves the sun that lights them
 //   vapour — glowing pieces of dry ice sublimating into fibrous vapour (a feedback buffer advected
 //            by swirling flow); tap to drop a piece, drag to carry it and stream its vapour
@@ -14,17 +13,12 @@ const Visual = (() => {
   const MAX_COLS = 6;
   const TRAIL_SCALE = 0.5; // trail buffer resolution relative to the canvas
   const BRUSH = 0.05;      // trail thickness, in screen heights
-  const RIPPLES = 8;
-  const RIPPLE_GAP = 0.1;  // uv distance a drawing finger travels between ripples
-  const RIPPLE_EVERY = 380; // ms between ripples from a finger held still
   const STRIKES = 3;        // lightning strikes alive at once (each lingers ~0.4s)
   const STRIKE_EVERY = 140; // ms between strikes while held
   const SEG_PER = 56;       // traced line segments per strike
   const MAXSEG = STRIKES * SEG_PER;
   const GRID_W = 96;        // storm noise is read back at this width so bolts can be traced along it
   const BOLT_LEN = 0.5;     // longest bolt, in screen heights
-  const SPAWNS = 16;        // finger-spawned pills alive at once (each lives ~4s)
-  const SPAWN_GAP = 0.035;  // uv distance a dragging finger travels between pills
   const SOURCES = 6;        // vapour: 2 drifting ice pieces + up to 4 you drop
   const VAPOUR_SCALE = 0.8; // vapour buffer resolution relative to the canvas (higher = finer fibres)
   const ICE_LIFE = 12;      // seconds a dropped piece takes to sublimate away
@@ -33,7 +27,6 @@ const Visual = (() => {
   const STYLES = {
     liquid: { prog: 'liquid', speed: 0.3, warp: 2.6, bright: 1.0 },
     storm: { prog: 'storm', speed: 0.85, warp: 4.6, bright: 1.0 },
-    pills: { prog: 'pills', speed: 0.5, warp: 0, bright: 1.0 },
     clouds: { prog: 'clouds', speed: 0.12, warp: 0, bright: 1.0 },
     vapour: { prog: 'vapour', speed: 1, warp: 0, bright: 1.0 },
   };
@@ -46,11 +39,23 @@ const Visual = (() => {
 precision highp float;
 uniform sampler2D uPrev;
 uniform vec2 uSize, uTexel, uA, uB;
-uniform float uOn, uR, uDecay;
+uniform float uOn, uR, uDecay, uPress;
+// R = chrome trail. G, B = water height now and one step ago (stored as h*.5+.5): a classic
+// two-buffer ripple simulation, so waves spread out from wherever the stroke pushes the water.
 void main(){
   vec2 uv = gl_FragCoord.xy / uSize;
-  float v = texture2D(uPrev, uv).r;
-  if (uDecay > .5) {   // once per frame; extra stamping passes in the same frame only add
+  vec4 c = texture2D(uPrev, uv);
+  float v = c.r;
+  float h = c.g * 2. - 1., hp = c.b * 2. - 1.;
+  // uDecay: 0 = stamping pass (only adds), 1 = the frame's main step, 2 = an extra water-only step.
+  if (uDecay > .5) {
+    float n = texture2D(uPrev, uv + vec2(uTexel.x, 0.)).g + texture2D(uPrev, uv - vec2(uTexel.x, 0.)).g
+            + texture2D(uPrev, uv + vec2(0., uTexel.y)).g + texture2D(uPrev, uv - vec2(0., uTexel.y)).g;
+    float hn = ((n * 2. - 4.) * .5 - hp) * .99;    // neighbours' average x2, minus last step, damped
+    hp = h;
+    h = hn;
+  }
+  if (uDecay > .5 && uDecay < 1.5) {
     v = v * .4
       + (texture2D(uPrev, uv + vec2(uTexel.x, 0.)).r + texture2D(uPrev, uv - vec2(uTexel.x, 0.)).r
        + texture2D(uPrev, uv + vec2(0., uTexel.y)).r + texture2D(uPrev, uv - vec2(0., uTexel.y)).r) * .15;
@@ -59,10 +64,12 @@ void main(){
   vec2 asp = vec2(uSize.x / uSize.y, 1.);
   vec2 p = uv * asp, a = uA * asp, b = uB * asp;
   vec2 pa = p - a, ba = b - a;
-  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0., 1.);
-  float d = length(pa - ba * h);
-  v = max(v, uOn * smoothstep(uR, uR * .3, d));
-  gl_FragColor = vec4(vec3(v), 1.);
+  float k = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0., 1.);
+  float d = length(pa - ba * k);
+  float stamp = uOn * smoothstep(uR, uR * .3, d);
+  v = max(v, stamp);
+  h = mix(h, uPress, stamp);                      // the stroke pushes the water in a pulse
+  gl_FragColor = vec4(v, clamp(h * .5 + .5, 0., 1.), clamp(hp * .5 + .5, 0., 1.), 1.);
 }`;
 
   const COMMON = `
@@ -126,11 +133,10 @@ vec3 finish(vec3 col, float vignette, float grain){
   const BODIES = {
     // Domain-warped fbm under a liquid-chrome trail. The trail's slope acts as a surface normal:
     // it bends the colours beneath (refraction), darkens at the rim and catches a highlight.
-    // Taps (and every so often while drawing) also send water ripples through the colours.
+    // The trail buffer also holds a water surface the stroke pushes, so waves spread from its shape.
     liquid: `
 uniform sampler2D uTrail;
 uniform vec2 uTexel;
-uniform vec3 uRip[${RIPPLES}];   // xy = uv, z = age in seconds
 float trail(vec2 uv){ return texture2D(uTrail, uv).r; }
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
@@ -147,26 +153,13 @@ void main(){
 
   // Ripples: a packet of concentric crests travels outward and fades, bending the colour slightly
   // and catching light on each crest so it reads as a ring.
-  // Each ring's slope joins the trail's slope as one chrome surface, so ripples shade like chrome too.
-  vec2 slope = vec2(0.);
-  float ring = 0.;
-  for (int i = 0; i < ${RIPPLES}; i++) {
-    float a = uRip[i].z;
-    if (a > 3.) continue;
-    vec2 d = (uv - uRip[i].xy) * asp;
-    float r = length(d);
-    float ahead = r - a * .3;                     // > 0 outside the leading edge
-    float e = ahead + .06;
-    float packet = exp(-pow(max(e, 0.) * 22., 2.) - pow(min(e, 0.) * 9., 2.));
-    float fade = exp(-a * 1.1) * smoothstep(0., .04, r);
-    float phase = ahead * 75.;
-    vec2 dir = d / max(r, 1e-3);
-    p += dir * sin(phase) * packet * fade * .03;
-    slope += dir * cos(phase) * packet * fade * .3;
-    ring = max(ring, packet * fade);
-  }
+  // The water surface's slope joins the trail's slope as one chrome surface, so waves shade like chrome.
+  vec2 w = uTexel * 1.5;
+  vec2 slope = vec2(texture2D(uTrail, uv + vec2(w.x, 0.)).g - texture2D(uTrail, uv - vec2(w.x, 0.)).g,
+                    texture2D(uTrail, uv + vec2(0., w.y)).g - texture2D(uTrail, uv - vec2(0., w.y)).g) * 7.;
+  p += slope * .25;
   n = normalize(vec3(-hx - slope.x, -hy - slope.y, .14));
-  body = max(body, smoothstep(.05, .45, ring));
+  body = max(body, smoothstep(.04, .35, length(slope)));
 
   float f;
   vec3 col = field(p, 3., f);
@@ -226,55 +219,6 @@ void main(){
   field(uv * asp * FIELD * 1.35, 3., f);
   float v = clamp(f, 0., 1.) * 255.;
   gl_FragColor = vec4(floor(v) / 255., fract(v), 0., 1.);
-}`,
-
-    // Rows of glowing pills filling the frame on grainy charcoal; heights swell in slow waves and
-    // colours drift along each row. Pills your finger spawns snap to the nearest column, grow in with
-    // a soft shadow, drift up and shrink away.
-    pills: `
-uniform vec4 uPills[${SPAWNS}];   // xy = where spawned (uv), z = age in seconds, w = seed
-void main(){
-  vec2 uv = gl_FragCoord.xy / uRes;
-  float asp = uRes.x / uRes.y;
-  float n = floor(10. + 10. * asp);
-  float t = uTime;
-  float id = floor(uv.x * n);
-  float u = fract(uv.x * n) - .5;
-  float s = (id + .5) / n;
-  vec3 col = vec3(.165, .158, .165);
-  const float ROWS = 5.;
-  for (int L = 0; L < 5; L++) {
-    float fl = float(L);
-    float wave = .5 + .5 * sin(s * 5. - t * 1.2 + fl * 1.9);
-    float h = (.16 + .32 * wave) / ROWS;                      // half-height, up to almost a full row
-    float cy = (fl + .5) / ROWS + .03 * sin(s * 3. + t * .6 + fl * 2.2);
-    float w = .32;
-    vec2 d = vec2(u / w, (uv.y - cy) / h);
-    float r = length(d);
-    col *= 1. - .25 * (1. - smoothstep(.9, 1.5, r));          // soft shadow
-    float m = 1. - smoothstep(.9, 1., r);
-    float g = .08 + .87 * abs(fract(s * .6 + fl * .23 + t * .02) - .5) * 2. + d.y * .1;
-    vec3 pc = palette(g) * (.82 + .3 * (d.y * .5 + .5));
-    col = mix(col, pc, m);
-  }
-  for (int i = 0; i < ${SPAWNS}; i++) {
-    vec4 P = uPills[i];
-    float a = P.z;
-    if (a > 4.) continue;
-    float seed = P.w;
-    float grow = smoothstep(0., .35, a) * (1. - smoothstep(3., 4., a));
-    float cx = (floor(P.x * n) + .5) / n;
-    float cy = P.y + a * .025;
-    float hh = (.08 + .14 * hash(vec2(seed, 1.))) * grow + 1e-4;
-    float ww = .3 / n;
-    vec2 d = vec2((uv.x - cx) / ww, (uv.y - cy) / hh);
-    float r = length(d);
-    col *= 1. - .35 * (1. - smoothstep(.9, 1.8, r)) * grow;   // soft shadow around it
-    float m = (1. - smoothstep(.9, 1., r)) * step(.002, grow);
-    float g = hash(vec2(seed, 2.)) + d.y * .12;
-    col = mix(col, palette(g) * (.82 + .3 * (d.y * .5 + .5)), m);
-  }
-  gl_FragColor = vec4(finish(col, .08, .06), 1.);
 }`,
 
     // Soft volumetric clouds: two drifting layers of billowy noise over a palette sky. Each layer
@@ -347,12 +291,19 @@ void main(){
   gl_FragColor = vec4(finish(filmic(col * 1.15), .2, .018), 1.);
 }`,
 
-    // Pieces of dry ice sublimating on black. The vapour lives in a feedback buffer (vapourStep);
-    // here it's coloured like heat through the palette, dark -> colours -> white-hot, and each piece
-    // is a jagged white core with a glow. A few specks drift in the dark.
+    // Glowing hearts sublimating on black, like dry ice. The vapour lives in a feedback buffer
+    // (vapourStep); here it's coloured like heat through the palette, dark -> colours -> white-hot,
+    // and each piece is a white-hot heart with a glow. A few specks drift in the dark.
     vapour: `
 uniform sampler2D uVap;
 uniform vec4 uSrc[${SOURCES}];   // xy = uv, z = strength 0..1, w = seed
+// Signed distance to a heart (point at the origin, lobes up to y ~ 1); negative inside.
+float heart(vec2 p){
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.) return length(p - vec2(.25, .75)) - .35355;
+  vec2 a = p - vec2(0., 1.), b = p - .5 * max(p.x + p.y, 0.);
+  return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y);
+}
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 asp = vec2(uRes.x / uRes.y, 1.);
@@ -369,10 +320,13 @@ void main(){
     if (S.z <= 0.) continue;
     vec2 d = p - S.xy * asp;
     float r = length(d);
-    float ang = atan(d.y, d.x);
-    float size = .014 * (.55 + .45 * S.z) * (1. + .35 * (noise(vec2(ang * 2.5, S.w)) - .5));
-    col = mix(col, vec3(1.), smoothstep(size, size * .6, r));
-    col += c3 * exp(-r * 55.) * .6 * S.z;
+    // each piece is a little white-hot heart, rocking gently
+    float size = .03 * (.55 + .45 * S.z);
+    float a = .25 * sin(uTime * 1.3 + S.w);
+    vec2 q = mat2(cos(a), -sin(a), sin(a), cos(a)) * d / size + vec2(0., .5);
+    float edge = 1.5 / (size * uRes.y);
+    col = mix(col, vec3(1.), smoothstep(edge, -edge, heart(q)));
+    col += c3 * exp(-r * 45.) * .6 * S.z;
   }
   vec2 cell = floor(gl_FragCoord.xy / 3.);
   col += c2 * step(.9986, hash(cell + floor(uTime * .4))) * .5;   // drifting specks
@@ -441,16 +395,12 @@ void main(){
   const cur = { speed: style.speed, warp: style.warp, bright: style.bright };
   const touch = { x: 0.5, y: 0.5, z: 0, down: 0, id: null };
   const path = []; // finger points not yet stamped into the trail (capped so a stall can't pile up)
-  const ripples = Array.from({ length: RIPPLES }, () => ({ x: 0, y: 0, age: 99 }));
-  const lastRipple = { x: 0, y: 0, at: 0 };
   const strikes = Array.from({ length: STRIKES }, () => ({ age: 99 }));
   let strikeAt = 0;
   const segData = new Float32Array(MAXSEG * 2 * 4); // the uSegs texture's contents
   let segTex = null;   // null until made; false if this device can't sample float textures
   let grid = null;     // read-back of the storm noise: { w, h, tex, fb, buf, f }
   const drag = { x: 1, y: 0, amount: 0 }; // recent drag direction, and how much you're moving
-  const spawned = Array.from({ length: SPAWNS }, () => ({ x: 0, y: 0, seed: 0, age: 99 }));
-  const lastSpawn = { x: 0, y: 0 };
   const light = { x: 0.28, y: 0.82 }; // clouds' sun; drifts to your finger and stays there
 
   function compile(type, src) {
@@ -477,14 +427,16 @@ void main(){
   function program(name) {
     if (!programs[name]) {
       programs[name] = link(COMMON + BODIES[name],
-        ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uCols', 'uTouch', 'uTrail', 'uTexel', 'uRip', 'uPills', 'uLight', 'uSegs', 'uSize', 'uVap', 'uSrc']);
+        ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uCols', 'uTouch', 'uTrail', 'uTexel', 'uLight', 'uSegs', 'uSize', 'uVap', 'uSrc']);
     }
     return programs[name];
   }
 
   // Two textures to ping-pong between (read last frame's, write this frame's), sized to the canvas.
   // Returns buf unchanged if it still fits, otherwise a fresh cleared pair.
-  function pingPong(buf, scale) {
+  // precise: use half-float storage when the device can render to it (smooth, low waves survive),
+  // falling back to 8-bit otherwise.
+  function pingPong(buf, scale, clear = [0, 0, 0, 1], precise = false) {
     const w = Math.max(1, Math.round(canvas.width * scale));
     const h = Math.max(1, Math.round(canvas.height * scale));
     if (buf && buf.w === w && buf.h === h) return buf;
@@ -492,11 +444,12 @@ void main(){
       buf.tex.forEach((t) => gl.deleteTexture(t));
       buf.fb.forEach((f) => gl.deleteFramebuffer(f));
     }
+    const type = precise ? halfFloatType() : gl.UNSIGNED_BYTE;
     const out = { w, h, tex: [], fb: [], read: 0 };
     for (let i = 0; i < 2; i++) {
       const tex = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, type, null);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -504,13 +457,32 @@ void main(){
       const fb = gl.createFramebuffer();
       gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-      gl.clearColor(0, 0, 0, 1);
+      if (type !== gl.UNSIGNED_BYTE && gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+        halfFloat = 0; // can't render to it here after all: start over in 8-bit
+        out.tex.push(tex); out.fb.push(fb);
+        out.tex.forEach((t) => gl.deleteTexture(t));
+        out.fb.forEach((f) => gl.deleteFramebuffer(f));
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        return pingPong(null, scale, clear, false);
+      }
+      gl.clearColor(...clear);
       gl.clear(gl.COLOR_BUFFER_BIT);
       out.tex.push(tex);
       out.fb.push(fb);
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     return out;
+  }
+
+  let halfFloat = null; // null = not checked yet, 0 = unavailable, else the HALF_FLOAT_OES type
+  function halfFloatType() {
+    if (halfFloat === null) {
+      const ext = gl.getExtension('OES_texture_half_float');
+      const linear = gl.getExtension('OES_texture_half_float_linear');
+      gl.getExtension('EXT_color_buffer_half_float');
+      halfFloat = ext && linear ? ext.HALF_FLOAT_OES : 0;
+    }
+    return halfFloat || gl.UNSIGNED_BYTE;
   }
 
   // ---- vapour ----
@@ -551,7 +523,7 @@ void main(){
     return src;
   }
 
-  // One feedback pass: fade (if decay) and stamp the segment a→b (if on).
+  // One feedback pass: step (decay 1 = full frame step, 2 = water only) and stamp a→b (if on).
   function trailPass(a, b, on, decay) {
     const write = 1 - trail.read;
     const { U } = trailProg;
@@ -560,7 +532,7 @@ void main(){
     gl.uniform2f(U.uA, a[0], a[1]);
     gl.uniform2f(U.uB, b[0], b[1]);
     gl.uniform1f(U.uOn, on ? 1 : 0);
-    gl.uniform1f(U.uDecay, decay ? 1 : 0);
+    gl.uniform1f(U.uDecay, decay);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     trail.read = write;
   }
@@ -568,7 +540,7 @@ void main(){
   // Fade once, then stamp every segment the finger travelled since the last frame (so curves stay
   // curves even when frames are slower than pointer events).
   function stepTrail() {
-    trail = pingPong(trail, TRAIL_SCALE);
+    trail = pingPong(trail, TRAIL_SCALE, [0, 0.5, 0.5, 1], true); // water starts at rest
     const { prog, U } = trailProg;
     gl.viewport(0, 0, trail.w, trail.h);
     gl.useProgram(prog);
@@ -577,9 +549,12 @@ void main(){
     gl.uniform2f(U.uSize, trail.w, trail.h);
     gl.uniform2f(U.uTexel, 1 / trail.w, 1 / trail.h);
     gl.uniform1f(U.uR, BRUSH);
+    gl.uniform1f(U.uPress, 0.9 * Math.sin(clock * 9)); // a pulse, so a held finger keeps making waves
     const pts = path.splice(0);
-    trailPass([0, 0], [0, 0], false, true);
-    for (let i = 1; i < pts.length; i++) trailPass(pts[i - 1], pts[i], true, false);
+    trailPass([0, 0], [0, 0], false, 1);
+    trailPass([0, 0], [0, 0], false, 2); // a second water step: waves travel twice as far
+    if (pts.length === 1 && touch.down) trailPass(pts[0], pts[0], true, 0);
+    for (let i = 1; i < pts.length; i++) trailPass(pts[i - 1], pts[i], true, 0);
     if (touch.down) path.push(pts.length ? pts[pts.length - 1] : [touch.x, touch.y]);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
@@ -593,7 +568,7 @@ void main(){
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
       gl.enableVertexAttribArray(0);
       gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-      trailProg = link(TRAIL, ['uPrev', 'uSize', 'uTexel', 'uA', 'uB', 'uOn', 'uR', 'uDecay']);
+      trailProg = link(TRAIL, ['uPrev', 'uSize', 'uTexel', 'uA', 'uB', 'uOn', 'uR', 'uDecay', 'uPress']);
       program('liquid');
     } catch (err) {
       console.error(err);
@@ -635,10 +610,6 @@ void main(){
 
   const oldest = (list) => list.reduce((a, b) => (a.age > b.age ? a : b));
 
-  function dropRipple(x, y) {
-    Object.assign(oldest(ripples), { x, y, age: 0 });
-    Object.assign(lastRipple, { x, y, at: performance.now() });
-  }
 
   // ---- storm: read the noise back, trace bolts along it, hand the segments to the shader ----
   function ensureSegTex() {
@@ -773,11 +744,6 @@ void main(){
     }
   }
 
-  function spawnPill(x, y) {
-    Object.assign(oldest(spawned), { x, y, seed: Math.random() * 100, age: 0 });
-    Object.assign(lastSpawn, { x, y });
-  }
-
   function bindPointers() {
     canvas.addEventListener('pointerdown', (e) => {
       const [x, y] = toUV(e);
@@ -785,8 +751,6 @@ void main(){
       touch.down++;
       path.length = 0;
       path.push([x, y], [x, y]); // a dot even if the finger never moves
-      if (style.prog === 'liquid') dropRipple(x, y);
-      if (style.prog === 'pills') spawnPill(x, y);
       if (style.prog === 'vapour') {
         const k = oldest(ice.filter((q) => !q.auto));
         Object.assign(k, { x, y, age: 0, seed: Math.random() * 50, held: true });
@@ -803,8 +767,6 @@ void main(){
         drag.amount = Math.min(1.5, drag.amount + len * 25);
       }
       Object.assign(touch, { x, y });
-      if (style.prog === 'liquid' && Math.hypot(x - lastRipple.x, y - lastRipple.y) > RIPPLE_GAP) dropRipple(x, y);
-      if (style.prog === 'pills' && Math.hypot(x - lastSpawn.x, y - lastSpawn.y) > SPAWN_GAP) spawnPill(x, y);
       ice.forEach((k) => { if (k.held) Object.assign(k, { x, y }); });
       if (path.length < 48) path.push([x, y]);
     });
@@ -846,11 +808,6 @@ void main(){
         if (segData[i] < 99) segData[i] = k.age;
       }
     });
-    if (style.prog === 'liquid' && touch.down && now - lastRipple.at > RIPPLE_EVERY) dropRipple(touch.x, touch.y);
-    const rip = new Float32Array(RIPPLES * 3);
-    ripples.forEach((r, i) => { r.age = Math.min(99, r.age + dt); rip.set([r.x, r.y, r.age], i * 3); });
-    const pil = new Float32Array(SPAWNS * 4);
-    spawned.forEach((q, i) => { q.age = Math.min(99, q.age + dt); pil.set([q.x, q.y, q.age, q.seed], i * 4); });
     if (touch.down) {
       const k = Math.min(1, dt * 4);
       light.x += (touch.x - light.x) * k;
@@ -875,8 +832,6 @@ void main(){
     gl.uniform1f(U.uCount, count);
     gl.uniform3fv(U.uCols, cols);
     gl.uniform3f(U.uTouch, touch.x, touch.y, touch.z);
-    gl.uniform3fv(U.uRip, rip);
-    gl.uniform4fv(U.uPills, pil);
     gl.uniform2f(U.uLight, light.x, light.y);
     if (vap) {
       gl.activeTexture(gl.TEXTURE0);

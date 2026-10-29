@@ -10,16 +10,14 @@ A colour a day, folded into palettes and liquid light.
 - **Visual**: a palette becomes a full-screen shader. Tap ◎ to save a still. Each style answers touch
   in its own way:
   - **liquid**: smooth domain-warped noise. Your finger draws a thick liquid-chrome trail that bends
-    the colours under it and slowly melts away. Chrome ripples spread out from your finger as you
-    tap, hold or draw.
+    the colours under it and slowly melts away. The stroke also pushes a simulated water surface, so
+    chrome waves spread out from the shape you draw (and keep coming while you hold still).
   - **storm**: fast, finely detailed noise. Hold a finger down and lightning runs along the noise's own
     paths from it, with branches peeling off onto neighbouring veins; it heads the way you drag.
-  - **pills**: rows of glowing ellipses filling the frame on charcoal, swelling in slow waves. Touch or drag to
-    spawn new pills; they snap into the columns, drift up and fade after a few seconds.
   - **clouds**: soft volumetric clouds in two drifting layers over a palette sky, self-shadowed with
     glowing edges. Your finger moves the sun.
-  - **vapour**: glowing pieces of dry ice sublimating into fibrous vapour on black, coloured like heat
-    through your palette. Tap to drop a piece; drag to carry it and stream its vapour behind.
+  - **vapour**: little glowing hearts sublimating into fibrous vapour on black, like dry ice, coloured
+    like heat through your palette. Tap to drop a heart; drag to carry it and stream its vapour behind.
 
 ## Run it
 
