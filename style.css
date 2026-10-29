@@ -1,7 +1,8 @@
 /* Tiny Butterfly — identity: soft and quiet, after oem.care. No outlines and no shadows: controls
    are pale grey pills, things sit centred on huge, almost-squircle white cards on off-white, type is
    a light neutral grotesk (Geist), and the mark is a little butterfly made of dots. The colours keep
-   a faint airbrushed volume so they're the only thing with weight on the page. */
+   a faint airbrushed volume so they're the only thing with weight on the page. Light by default, like
+   OEM; the ◐ button in the header switches to dark (html[data-theme="dark"]). */
 :root {
   --bg: #FAFAFA;
   --surface: #FFFFFF;
@@ -31,22 +32,24 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #121212;
-    --surface: #1C1C1C;
-    --ink: #EEEEEE;
-    --muted: rgba(255, 255, 255, .5);
-    --fill: rgba(255, 255, 255, .07);
-    --fill-strong: rgba(255, 255, 255, .13);
-    --line: rgba(255, 255, 255, .08);
-    --empty: #262626;
-    --chrome: rgba(28, 28, 28, .86);
-    --chrome-ink: #EEEEEE;
-    --float: 0 8px 30px rgba(0, 0, 0, .4);
-    color-scheme: dark;
-  }
+:root[data-theme="dark"] {
+  --bg: #121212;
+  --surface: #1C1C1C;
+  --ink: #EEEEEE;
+  --muted: rgba(255, 255, 255, .5);
+  --fill: rgba(255, 255, 255, .07);
+  --fill-strong: rgba(255, 255, 255, .13);
+  --line: rgba(255, 255, 255, .08);
+  --empty: #262626;
+  --chrome: rgba(28, 28, 28, .86);
+  --chrome-ink: #EEEEEE;
+  --float: 0 8px 30px rgba(0, 0, 0, .4);
+  color-scheme: dark;
 }
+[data-theme="dark"] .primary { background: rgba(255, 255, 255, .85); color: #111; }
+[data-theme="dark"] .tabs { background: rgba(50, 50, 50, .72); }
+[data-theme="dark"] .tabs button { color: rgba(255, 255, 255, .55); }
+[data-theme="dark"] .tabs button[aria-current="page"] { color: #111; background-color: #EEE; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -69,7 +72,8 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
   max-width: 560px; margin: 0 auto;
   padding: calc(16px + env(safe-area-inset-top)) 16px 8px;
 }
-.top-side { width: 38px; }
+.theme-btn { font-size: 16px; transition: transform .4s ease; }
+[data-theme="dark"] .theme-btn { transform: rotate(180deg); }
 .mark { margin: 0; line-height: 0; }
 .mark svg { width: 34px; height: auto; fill: var(--ink); }
 .icon-btn {
@@ -110,13 +114,6 @@ h2 { font-size: 15px; font-weight: 400; line-height: 1.2; color: var(--ink); tex
 .primary:active, .ghost:active, .button-like:active { transform: scale(.97); }
 .primary:disabled { opacity: .3; cursor: default; transform: none; }
 .danger { color: #C2410C; }
-@media (prefers-color-scheme: dark) {
-  .primary { background: rgba(255, 255, 255, .85); color: #111; }
-  .tabs { background: rgba(50, 50, 50, .72) !important; }
-  .tabs button { color: rgba(255, 255, 255, .55) !important; }
-  .tabs button[aria-current="page"] { color: #111 !important; background-color: #EEE !important; }
-}
-
 .field { display: block; margin-bottom: 14px; }
 .field > span { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin: 0 0 6px 4px; letter-spacing: .03em; }
 .field em { font-style: normal; opacity: .7; }
@@ -154,9 +151,8 @@ h2 { font-size: 15px; font-weight: 400; line-height: 1.2; color: var(--ink); tex
 .swatch-big.pop { transform: scale(1.015); }
 .swatch-day {
   position: absolute; top: -32px; left: 0; right: 0; text-align: center;
-  font-size: 14px; font-weight: 400; line-height: 1.2;
-  background: linear-gradient(90deg, #E58BB5, #F2A65E); -webkit-background-clip: text; background-clip: text;
-  color: transparent !important;
+  font-size: 13px; font-weight: 400; line-height: 1.2; letter-spacing: .02em;
+  color: var(--muted) !important;
 }
 .swatch-hex {
   position: absolute; bottom: -50px; left: 50%; transform: translateX(-50%); padding: 7px 14px;

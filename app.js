@@ -409,6 +409,16 @@
     for (const x of $('#styles').children) x.classList.toggle('on', x.dataset.style === name);
     if (state.lastStyle !== name) { state.lastStyle = name; save(); }
   }
+  // ---- light / dark -------------------------------------------------------
+  // Light by default; the ◐ button flips it, remembered on this device (a viewing preference, so it
+  // lives outside the backed-up state).
+  function setTheme(dark) {
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    $('meta[name="theme-color"]').content = dark ? '#121212' : '#FAFAFA';
+    try { localStorage.setItem('tinyButterfly.theme', dark ? 'dark' : 'light'); } catch {}
+  }
+  $('#themeBtn').addEventListener('click', () => setTheme(document.documentElement.dataset.theme !== 'dark'));
+
   $('#styles').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b) setStyle(b.dataset.style);
