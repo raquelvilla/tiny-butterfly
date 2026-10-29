@@ -28,10 +28,10 @@ A colour a day, folded into palettes and liquid light.
     point to move it, drag a handle to bend the curve, double-tap a point to remove it. The curve is a
     fine glowing line in your palette with a light travelling along it; the points and handles fade
     away after a few seconds so you're left with just the line. Your curve is remembered.
-  - **candles**: a birthday cake covered in candles, striped in your palette (set how many in the
-    little field: 60 for a 60th). Swipe across to blow: flames lean away from your breath and the
-    nearest go out with a curl of smoke. Tap a candle to relight it; blow them all out and they relight
-    one after another.
+  - **candles**: an abstraction of a birthday: white candles floating in the dark, receding into depth,
+    their flames casting soft light tinted by your palette. Set how many in the little field (60 for a
+    60th). Swipe across to blow: flames lean away from your breath and the nearest go out with a curl
+    of smoke. Tap a candle to relight it; blow them all out and they relight one after another.
 
 ## Run it
 
@@ -77,6 +77,6 @@ Palettes point at days, so changing a day's colour changes it in every palette t
 | `color.js` | hex parsing, OKLab/OKLCH, harmony suggestions |
 | `shader.js` | WebGL styles and their touch effects |
 | `threads.js` | the threads style's bezier pen (drawn in 2D, composited by `shader.js`) |
-| `candles.js` | the candles style's cake, flames and smoke (drawn in 2D, composited by `shader.js`) |
+| `candles.js` | the candles style's candles, flames and smoke (drawn in 2D, composited by `shader.js`) |
 | `sw.js`, `manifest.json`, `icons/` | installable / offline |
 | `tools/make_icons.py` | redraws the butterfly icons |

@@ -1,8 +1,9 @@
-// Tiny Butterfly — "candles": a birthday cake, seen from a little above, covered in as many candles as
-// you like (60 for a 60th). Striped in your palette, flames flickering. Swipe across to blow: flames
-// lean away from your finger and the nearest go out with a curl of smoke. Tap a candle to relight
-// it; blow them all out and they relight one after another, a flame passed along. Drawn in 2D here
-// and handed to shader.js as two textures: the scene, and a small warm glow from the flames.
+// Tiny Butterfly — "candles": an abstraction of a birthday — just white candles floating in the dark,
+// as many as you like (60 for a 60th), receding into depth, their flames flickering and casting a
+// soft light tinted by your palette. Swipe across to blow: flames lean away from your finger and the
+// nearest go out with a curl of smoke. Tap a candle to relight it; blow them all out and they relight
+// one after another, a flame passed along. Drawn in 2D here and handed to shader.js as two textures:
+// the scene, and a small warm glow from the flames.
 
 const Candles = (() => {
   const MAX = 120;
@@ -14,7 +15,7 @@ const Candles = (() => {
   let canvas, ctx, glowCanvas, gctx;
   let W = 0, H = 0, clock = 0, built = '';
   let inks = [[1, 1, 1]];  // palette colours 0..1, sorted dark -> light
-  let count = 60, candles = [], cake = null;
+  let count = 60, candles = [], field = null;
   let prev = null, moved = 0, allOutAt = -1;
 
   function init() {
@@ -38,23 +39,23 @@ const Candles = (() => {
   const rgb = (c, a = 1, k = 1) =>
     `rgba(${Math.round(Math.min(1, c[0] * k) * 255)},${Math.round(Math.min(1, c[1] * k) * 255)},${Math.round(Math.min(1, c[2] * k) * 255)},${a})`;
   const mixc = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
-  const WHITE = [1, 1, 1];
 
-  // ---- layout: the cake, then candles packed evenly over its top (a sunflower spiral) ----------
+  // ---- layout: candles spread evenly over an unseen floor (a sunflower spiral), smaller further back --
   function build() {
-    const rx = Math.min(W * 0.43, H * 0.3), ry = rx * 0.36;
-    cake = { cx: W / 2, cy: H * 0.52, rx, ry, side: H * 0.11 };
-    const spacing = Math.sqrt((Math.PI * rx * rx) / count) * 0.86; // room per candle across the top
-    const cw = Math.max(H * 0.0035, Math.min(H * 0.013, spacing * 0.3));
-    const ch = Math.max(H * 0.045, Math.min(H * 0.085, cw * 7));
+    const rx = W * 0.44, ry = H * 0.2;
+    field = { cx: W / 2, cy: H * 0.56, rx, ry };
+    const spacing = Math.sqrt((Math.PI * rx * rx) / count) * 0.8; // room per candle
+    const cw = Math.max(H * 0.004, Math.min(H * 0.016, spacing * 0.28));
+    const ch = Math.max(H * 0.05, Math.min(H * 0.1, cw * 7));
     const turn = Math.random() * 7;
     candles = [];
     for (let i = 0; i < count; i++) {
-      const r = Math.sqrt((i + 0.5) / count) * 0.86, a = i * 2.39996 + turn;
-      const ink = Math.floor(Math.random() * inks.length);
+      const r = Math.sqrt((i + 0.5) / count), a = i * 2.39996 + turn;
+      const y = field.cy + Math.sin(a) * r * ry;
+      const depth = 0.55 + 0.45 * (y - (field.cy - ry)) / (2 * ry);   // 0.55 far .. 1 near
+      const tall = 0.75 + Math.random() * 0.5;                         // candles of different heights
       candles.push({
-        x: cake.cx + Math.cos(a) * r * rx, y: cake.cy + Math.sin(a) * r * ry, w: cw, h: ch,
-        ink, stripe: Math.random() < 0.6 ? -1 : (ink + 1 + Math.floor(Math.random() * (inks.length - 1))) % inks.length,
+        x: field.cx + Math.cos(a) * r * rx * (0.7 + 0.3 * depth), y, w: cw * depth, h: ch * depth * tall, depth,
         lit: true, flame: 1, lean: 0, leanV: 0, seed: Math.random() * 100, outAt: -99, relightAt: -1,
       });
     }
@@ -134,85 +135,53 @@ const Candles = (() => {
 
   // ---- drawing ----------------------------------------------------------------------
   function draw(glowAmt) {
-    const { cx, cy, rx, ry, side } = cake;
-    const warm = [1, 0.62, 0.32];
-    const frost = mixc(inks[inks.length - 1], WHITE, 0.35);
-    const body = inks[Math.max(0, inks.length - 2)];
+    const { cx, cy, ry } = field;
+    const tint = mixc(inks[inks.length - 1], [1, 0.62, 0.32], 0.65); // candlelight, touched by your palette
 
-    // the room: dark, warmed by however many flames are lit
-    const bg = ctx.createRadialGradient(cx, cy - side, 0, cx, cy - side, H * 0.8);
-    bg.addColorStop(0, rgb(warm, 1, 0.16 * glowAmt + 0.03));
-    bg.addColorStop(1, '#050404');
+    // the dark, warmed by however many flames are lit
+    const bg = ctx.createRadialGradient(cx, cy - ry, 0, cx, cy - ry, H * 0.75);
+    bg.addColorStop(0, rgb(tint, 1, 0.13 * glowAmt + 0.02));
+    bg.addColorStop(1, '#040303');
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
 
-    // the cake's side, a cylinder, lit warmly from above
-    ctx.beginPath();
-    ctx.moveTo(cx + rx, cy);
-    ctx.lineTo(cx + rx, cy + side);
-    ctx.ellipse(cx, cy + side, rx, ry, 0, 0, Math.PI);
-    ctx.lineTo(cx - rx, cy);
-    ctx.ellipse(cx, cy, rx, ry, 0, Math.PI, 0, true);
-    ctx.closePath();
-    const sg = ctx.createLinearGradient(cx - rx, 0, cx + rx, 0);
-    const shade = 0.35 + 0.55 * glowAmt;
-    sg.addColorStop(0, rgb(body, 1, shade * 0.45));
-    sg.addColorStop(0.45, rgb(mixc(body, warm, 0.15), 1, shade));
-    sg.addColorStop(1, rgb(body, 1, shade * 0.35));
-    ctx.fillStyle = sg;
-    ctx.fill();
-
-    // frosting drips over the front edge
-    ctx.fillStyle = rgb(frost, 1, shade * 0.95);
-    for (let k = 0; k <= 26; k++) {
-      const a = (k / 26) * Math.PI, x = cx + Math.cos(a) * rx, y = cy + Math.sin(a) * ry;
-      const len = side * (0.12 + 0.3 * Math.abs(Math.sin(k * 12.9898) * 0.5 + 0.5) * Math.sin(a));
-      const wdt = rx * 0.07;
-      ctx.beginPath();
-      ctx.ellipse(x, y + len * 0.5, wdt * 0.5, len * 0.5 + wdt * 0.3, 0, 0, Math.PI * 2);
-      ctx.fill();
+    // a soft pool of light on the unseen floor beneath each flame
+    ctx.globalCompositeOperation = 'lighter';
+    for (const c of candles) {
+      if (c.flame < 0.05) continue;
+      const r = c.h * 1.1, g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, r);
+      g.addColorStop(0, rgb(tint, 0.16 * c.flame / Math.sqrt(Math.max(1, candles.length / 12))));
+      g.addColorStop(1, rgb(tint, 0));
+      ctx.fillStyle = g;
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      ctx.scale(1, 0.32);
+      ctx.translate(-c.x, -c.y);
+      ctx.fillRect(c.x - r, c.y - r, r * 2, r * 2);
+      ctx.restore();
     }
+    ctx.globalCompositeOperation = 'source-over';
 
-    // the top, frosted, glowing in the middle where the candles are
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-    const tg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rx);
-    tg.addColorStop(0, rgb(mixc(frost, warm, 0.25 * glowAmt), 1, shade * 1.1));
-    tg.addColorStop(1, rgb(frost, 1, shade * 0.8));
-    ctx.fillStyle = tg;
-    ctx.fill();
-
-    // candles, back to front
+    // white candles, back to front, lit warmly from their own flames
     for (const c of candles) {
       const x0 = c.x - c.w / 2, top = c.y - c.h;
-      ctx.fillStyle = 'rgba(0,0,0,.18)';
+      const lift = 0.55 + 0.45 * glowAmt;
+      const bodyG = ctx.createLinearGradient(x0, 0, x0 + c.w, 0); // round it
+      bodyG.addColorStop(0, rgb([1, 0.98, 0.95], 1, 0.98 * lift));
+      bodyG.addColorStop(0.45, rgb([1, 0.97, 0.93], 1, 0.9 * lift));
+      bodyG.addColorStop(1, rgb([0.9, 0.86, 0.82], 1, 0.5 * lift));
+      ctx.fillStyle = bodyG;
       ctx.beginPath();
-      ctx.ellipse(c.x + c.w * 0.4, c.y, c.w * 1.1, c.w * 0.4, 0, 0, Math.PI * 2);
+      ctx.roundRect ? ctx.roundRect(x0, top, c.w, c.h, [c.w * 0.25, c.w * 0.25, c.w * 0.1, c.w * 0.1])
+                    : ctx.rect(x0, top, c.w, c.h);
       ctx.fill();
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x0, top, c.w, c.h);
-      ctx.clip();
-      ctx.fillStyle = rgb(mixc(inks[c.ink], WHITE, 0.15), 1, shade * 1.05);
-      ctx.fillRect(x0, top, c.w, c.h);
-      ctx.strokeStyle = c.stripe < 0 ? rgb(WHITE, 0.85, shade * 1.05) : rgb(inks[c.stripe], 1, shade * 1.05);
-      ctx.lineWidth = c.w * 0.4;
-      ctx.beginPath();
-      for (let s = -1; s < c.h / (c.w * 1.4) + 2; s++) {
-        const yy = c.y - s * c.w * 1.4;
-        ctx.moveTo(x0 - c.w, yy + c.w);
-        ctx.lineTo(x0 + c.w * 2, yy - c.w * 1.2);
-      }
-      ctx.stroke();
-      const lg = ctx.createLinearGradient(x0, 0, x0 + c.w, 0); // round it
-      lg.addColorStop(0, 'rgba(255,255,255,.25)');
-      lg.addColorStop(0.5, 'rgba(255,255,255,0)');
-      lg.addColorStop(1, 'rgba(0,0,0,.3)');
-      ctx.fillStyle = lg;
-      ctx.fillRect(x0, top, c.w, c.h);
-      ctx.restore();
+      const glowTop = ctx.createLinearGradient(0, top, 0, top + c.h * 0.4); // the top glows under its flame
+      glowTop.addColorStop(0, `rgba(255,200,130,${0.45 * c.flame})`);
+      glowTop.addColorStop(1, 'rgba(255,200,130,0)');
+      ctx.fillStyle = glowTop;
+      ctx.fill();
       ctx.strokeStyle = 'rgba(30,20,15,.9)'; // the wick
-      ctx.lineWidth = Math.max(1, c.w * 0.18);
+      ctx.lineWidth = Math.max(1, c.w * 0.16);
       ctx.beginPath();
       ctx.moveTo(c.x, top);
       ctx.lineTo(c.x + c.lean * c.w * 0.3, top - c.w * 1.1);
@@ -248,7 +217,7 @@ const Candles = (() => {
       ctx.fill();
       const gx = (wx + sway * 0.5) / GLOW, gy = (wy - fh * 0.35) / GLOW, gr = (fh * 2.4) / GLOW;
       const gg = gctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
-      gg.addColorStop(0, `rgba(255,170,80,${glowEach * c.flame})`);
+      gg.addColorStop(0, rgb(tint, glowEach * c.flame));
       gg.addColorStop(1, 'rgba(255,120,40,0)');
       gctx.fillStyle = gg;
       gctx.fillRect(gx - gr, gy - gr, gr * 2, gr * 2);
