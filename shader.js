@@ -12,7 +12,7 @@ const Visual = (() => {
   const FIELD = 2.2; // noise field units across the screen height
   const MAX_COLS = 6;
   const TRAIL_SCALE = 0.5; // trail buffer resolution relative to the canvas
-  const BRUSH = 0.05;      // trail thickness, in screen heights
+  const BRUSH = 0.038;     // trail thickness, in screen heights
   const STRIKES = 3;        // lightning strikes alive at once (each lingers ~0.4s)
   const STRIKE_EVERY = 140; // ms between strikes while held
   const SEG_PER = 56;       // traced line segments per strike
