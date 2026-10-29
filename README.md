@@ -2,7 +2,7 @@
 
 A colour a day, folded into palettes and liquid light.
 
-- **Today**: type a hex code (or use the little picker), add your Pantone name and a word or note.
+- **Today**: type a hex code (or use the little picker) and add a word or note.
   The diary below shows every day you've kept, month by month. Tap any day to see or edit it.
 - **Palettes**: tap 3–6 of your colours to make a palette. Stuck? **✦ Inspire me** finds palettes in
   your own colours using colour harmony (analogous, complementary, triadic, split-complementary,
@@ -50,7 +50,7 @@ Everything is stored in `localStorage` under `tinyButterfly.v1`:
 
 ```json
 {
-  "days":     { "2026-10-29": { "hex": "#6A4C93", "pantone": "", "note": "plum dusk", "at": "…" } },
+  "days":     { "2026-10-29": { "hex": "#6A4C93", "note": "plum dusk", "at": "…" } },
   "palettes": [ { "id": "p_…", "name": "…", "dates": ["2026-10-29", "…"], "source": "manual|harmony" } ],
   "lastVisual": "p_…"
 }

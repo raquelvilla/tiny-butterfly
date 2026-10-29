@@ -24,7 +24,7 @@ const Threads = (() => {
     ctx = canvas.getContext('2d');
     glowCanvas = document.createElement('canvas');
     gctx = glowCanvas.getContext('2d');
-    if (document.fonts) document.fonts.load('500 100px "Space Grotesk"').then(() => { built = ''; });
+    if (document.fonts) document.fonts.load('400 100px "Geist"').then(() => { built = ''; });
   }
 
   function setWord(w) {
@@ -46,7 +46,7 @@ const Threads = (() => {
   // ---- layout: words → lines → a filled mask → traced outline loops → particles ----------
   function lines() {
     const words = word.split(/\s+/);
-    const font = (s) => `500 ${s}px "Space Grotesk", system-ui, sans-serif`;
+    const font = (s) => `400 ${s}px "Geist", system-ui, sans-serif`;
     ctx.font = font(100);
     let best = null;
     for (let rows = 1; rows <= Math.min(3, words.length); rows++) {

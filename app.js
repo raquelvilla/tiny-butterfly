@@ -10,7 +10,7 @@
   };
 
   // ---- state --------------------------------------------------------------
-  // { days: { 'YYYY-MM-DD': { hex, pantone, note, at } },
+  // { days: { 'YYYY-MM-DD': { hex, note, at } (older entries may also carry a pantone) },
   //   palettes: [{ id, name, dates: [...], source: 'manual'|'harmony', createdAt }],
   //   lastVisual: paletteId | null, lastStyle: 'liquid'|'storm'|'clouds'|'vapour' }
   let state = load();
@@ -85,7 +85,6 @@
     editing = key;
     const d = state.days[key];
     hexInput.value = d ? d.hex.slice(1) : '';
-    $('#pantoneInput').value = d?.pantone || '';
     $('#noteInput').value = d?.note || '';
     renderEditor();
     renderDiary();
@@ -107,7 +106,6 @@
 
     const saved = state.days[editing];
     const unchanged = saved && saved.hex === hex &&
-      (saved.pantone || '') === $('#pantoneInput').value.trim() &&
       (saved.note || '') === $('#noteInput').value.trim();
     $('#saveBtn').disabled = !hex || unchanged;
     $('#saveBtn').textContent = has ? 'Update' : isToday ? 'Keep this colour' : 'Keep for this day';
@@ -124,7 +122,6 @@
     hexInput.value = e.target.value.slice(1).toUpperCase();
     renderEditor();
   });
-  $('#pantoneInput').addEventListener('input', renderEditor);
   $('#noteInput').addEventListener('input', renderEditor);
 
   $('#dayForm').addEventListener('submit', (e) => {
@@ -133,7 +130,7 @@
     if (!hex) return;
     state.days[editing] = {
       hex,
-      pantone: $('#pantoneInput').value.trim(),
+      ...(state.days[editing]?.pantone ? { pantone: state.days[editing].pantone } : {}), // kept from older entries
       note: $('#noteInput').value.trim(),
       at: new Date().toISOString(),
     };
