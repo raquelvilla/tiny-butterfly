@@ -293,7 +293,7 @@ void main(){
 
     // Glowing hearts sublimating on black, like dry ice. The vapour lives in a feedback buffer
     // (vapourStep); here it's coloured like heat through the palette, dark -> colours -> white-hot,
-    // and each piece is a white-hot heart with a glow. A few specks drift in the dark.
+    // and each piece is a white-hot heart with a glow.
     vapour: `
 uniform sampler2D uVap;
 uniform vec4 uSrc[${SOURCES}];   // xy = uv, z = strength 0..1, w = seed
@@ -328,8 +328,6 @@ void main(){
     col = mix(col, vec3(1.), smoothstep(edge, -edge, heart(q)));
     col += c3 * exp(-r * 45.) * .6 * S.z;
   }
-  vec2 cell = floor(gl_FragCoord.xy / 3.);
-  col += c2 * step(.9986, hash(cell + floor(uTime * .4))) * .5;   // drifting specks
   gl_FragColor = vec4(finish(col, .25, .02), 1.);
 }`,
 
