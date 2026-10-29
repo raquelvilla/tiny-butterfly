@@ -14,10 +14,11 @@ const Visual = (() => {
   const TRAIL_SCALE = 0.5; // trail buffer resolution relative to the canvas
   const BRUSH = 0.05;      // trail thickness, in screen heights
   const RIPPLES = 8;
-  const RIPPLE_GAP = 0.14; // uv distance a drawing finger travels between ripples
+  const RIPPLE_GAP = 0.1;  // uv distance a drawing finger travels between ripples
+  const RIPPLE_EVERY = 380; // ms between ripples from a finger held still
   const STRIKES = 3;        // lightning strikes alive at once (each lingers ~0.4s)
   const STRIKE_EVERY = 140; // ms between strikes while held
-  const SEG_PER = 32;       // traced line segments per strike
+  const SEG_PER = 56;       // traced line segments per strike
   const MAXSEG = STRIKES * SEG_PER;
   const GRID_W = 96;        // storm noise is read back at this width so bolts can be traced along it
   const BOLT_LEN = 0.5;     // longest bolt, in screen heights
@@ -141,7 +142,9 @@ void main(){
 
   // Ripples: a packet of concentric crests travels outward and fades, bending the colour slightly
   // and catching light on each crest so it reads as a ring.
-  float shade = 0.;
+  // Each ring's slope joins the trail's slope as one chrome surface, so ripples shade like chrome too.
+  vec2 slope = vec2(0.);
+  float ring = 0.;
   for (int i = 0; i < ${RIPPLES}; i++) {
     float a = uRip[i].z;
     if (a > 3.) continue;
@@ -152,14 +155,16 @@ void main(){
     float packet = exp(-pow(max(e, 0.) * 22., 2.) - pow(min(e, 0.) * 9., 2.));
     float fade = exp(-a * 1.1) * smoothstep(0., .04, r);
     float phase = ahead * 75.;
-    p += d / max(r, 1e-3) * sin(phase) * packet * fade * .03;
-    shade += cos(phase) * packet * fade;
+    vec2 dir = d / max(r, 1e-3);
+    p += dir * sin(phase) * packet * fade * .03;
+    slope += dir * cos(phase) * packet * fade * .3;
+    ring = max(ring, packet * fade);
   }
+  n = normalize(vec3(-hx - slope.x, -hy - slope.y, .14));
+  body = max(body, smoothstep(.05, .45, ring));
 
   float f;
   vec3 col = field(p, 3., f);
-  col *= 1. + shade * .14;
-  col += pow(max(shade, 0.), 3.) * .1;
 
   vec3 L = normalize(vec3(-.45, .6, .65));
   float diff = clamp(dot(n, L), 0., 1.);
@@ -327,7 +332,7 @@ void main(){
   vec3 col = mix(sky, vec3(dot(sky, vec3(.3, .59, .11))), .3) * .8;   // a little desaturated, like a photo
   float sun = exp(-dist * dist * 7.);
   vec3 sunCol = mix(palette(1.), vec3(1., .96, .88), .55);
-  col += sunCol * (sun * .6 + exp(-dist * 2.4) * .3);         // wide warm halo
+  col += sunCol * (sun * .7 + exp(-dist * 2.4) * .38);        // wide warm halo
   vec3 litCol = mix(palette(.85), vec3(1.), .55);
   vec3 shadowCol = mix(palette(.25), litCol, .3) * .75;
   float cover = 0.;
@@ -359,7 +364,8 @@ void main(){
   float rays = pow(open, 3.) * exp(-dist * 1.6);
   col += sunCol * rays * .4 * (1. - cover * .5);
   // the sun itself: a soft bright disc that shows through thin cloud and dims behind thick
-  col += sunCol * (smoothstep(.09, .02, dist) * 1.3 + exp(-dist * dist * 70.) * .7) * (1. - cover * .7);
+  // the sun itself: a soft disc with a hot core, rolled off (not clipped) by the filmic curve below
+  col += sunCol * (smoothstep(.09, .02, dist) * 1.8 + exp(-dist * dist * 160.) * 3.) * (1. - cover * .45);
   gl_FragColor = vec4(finish(filmic(col * 1.15), .2, .018), 1.);
 }`,
   };
@@ -375,7 +381,7 @@ void main(){
   const touch = { x: 0.5, y: 0.5, z: 0, down: 0, id: null };
   const path = []; // finger points not yet stamped into the trail (capped so a stall can't pile up)
   const ripples = Array.from({ length: RIPPLES }, () => ({ x: 0, y: 0, age: 99 }));
-  const lastRipple = { x: 0, y: 0 };
+  const lastRipple = { x: 0, y: 0, at: 0 };
   const strikes = Array.from({ length: STRIKES }, () => ({ age: 99 }));
   let strikeAt = 0;
   const segData = new Float32Array(MAXSEG * 2 * 4); // the uSegs texture's contents
@@ -531,7 +537,7 @@ void main(){
 
   function dropRipple(x, y) {
     Object.assign(oldest(ripples), { x, y, age: 0 });
-    Object.assign(lastRipple, { x, y });
+    Object.assign(lastRipple, { x, y, at: performance.now() });
   }
 
   // ---- storm: read the noise back, trace bolts along it, hand the segments to the shader ----
@@ -593,41 +599,69 @@ void main(){
 
   // Bolts walk along the contour of the noise through the finger: each step goes along the contour,
   // nudges back onto it, and adds a little crackle; branches peel off onto neighbouring contours.
+  // Each walked line is then smoothed (Chaikin corner cutting) so it flows instead of zig-zagging.
   function traceStrike(x0, y0, slot) {
     readField();
     const asp = canvas.width / canvas.height;
-    const segs = [];
+    const step = 0.016;
     const grad = (x, y) => {
       const ex = 1 / grid.w, ey = 1 / grid.h;
       return [(fieldAt(x + ex, y) - fieldAt(x - ex, y)) / (2 * ex * asp), (fieldAt(x, y + ey) - fieldAt(x, y - ey)) / (2 * ey)];
     };
-    const arm = (x, y, sign, steps, level, weight, travelled, branch) => {
-      const step = 0.02;
-      for (let k = 0; k < steps && segs.length < SEG_PER; k++) {
+    const arms = []; // { pts: [[x, y], …], t0: distance from the finger where it starts, weight }
+    const walk = (x, y, sign, steps, level, weight, t0, branch) => {
+      const pts = [[x, y]];
+      let travelled = t0;
+      for (let k = 0; k < steps; k++) {
         const [gx, gy] = grad(x, y);
         const g = Math.hypot(gx, gy);
         let nx = 0, ny = 0, tx, ty, pull = 0;
         if (g < 1e-4) { const a = Math.random() * 6.2832; tx = Math.cos(a); ty = Math.sin(a); }
         else {
           nx = gx / g; ny = gy / g; tx = -ny * sign; ty = nx * sign;
-          pull = Math.max(-0.012, Math.min(0.012, (level - fieldAt(x, y)) / g));
+          pull = Math.max(-0.01, Math.min(0.01, (level - fieldAt(x, y)) / g));
         }
-        const off = pull + (Math.random() - 0.5) * 0.008;
-        const bx = (x * asp + tx * step + nx * off) / asp, by = y + ty * step + ny * off;
-        segs.push([x, y, bx, by, Math.min(1, travelled / BOLT_LEN), weight]);
-        travelled += step; x = bx; y = by;
+        const off = pull + (Math.random() - 0.5) * 0.007;
+        x = (x * asp + tx * step + nx * off) / asp;
+        y = y + ty * step + ny * off;
+        pts.push([x, y]);
+        travelled += step;
         if (x < 0 || x > 1 || y < 0 || y > 1 || travelled > BOLT_LEN) break;
-        if (!branch && Math.random() < 0.12) {
-          arm(x, y, Math.random() < 0.5 ? sign : -sign, 7, level + (Math.random() - 0.5) * 0.08, weight * 0.6, travelled, true);
+        if (!branch && Math.random() < 0.1) {
+          walk(x, y, Math.random() < 0.5 ? sign : -sign, 8, level + (Math.random() - 0.5) * 0.08, weight * 0.6, travelled, true);
         }
       }
+      arms.push({ pts, t0, weight });
     };
+    const chaikin = (pts) => {
+      const out = [pts[0]];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+        out.push([ax * 0.75 + bx * 0.25, ay * 0.75 + by * 0.25], [ax * 0.25 + bx * 0.75, ay * 0.25 + by * 0.75]);
+      }
+      out.push(pts[pts.length - 1]);
+      return out;
+    };
+
     const level = fieldAt(x0, y0);
     const [gx, gy] = grad(x0, y0);
     let sign = Math.random() < 0.5 ? 1 : -1;
     if (drag.amount > 0.3) sign = (-gy * drag.x + gx * drag.y) >= 0 ? 1 : -1; // main arm heads the way you drag
-    arm(x0, y0, sign, 20, level, 1, 0, false);
-    arm(x0, y0, -sign, 9, level, 0.8, 0, false);
+    walk(x0, y0, sign, 18, level, 1, 0, false);
+    walk(x0, y0, -sign, 8, level, 0.8, 0, false);
+
+    // Strongest arms first, so the segment budget never cuts the main bolt.
+    const segs = [];
+    arms.sort((a, b) => b.weight - a.weight);
+    for (const arm of arms) {
+      const pts = chaikin(arm.pts);
+      let len = arm.t0;
+      for (let i = 0; i < pts.length - 1 && segs.length < SEG_PER; i++) {
+        const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+        segs.push([ax, ay, bx, by, Math.min(1, len / BOLT_LEN), arm.weight]);
+        len += Math.hypot((bx - ax) * asp, by - ay);
+      }
+    }
     for (let j = 0; j < SEG_PER; j++) {
       const i = slot * SEG_PER + j, sg = segs[j];
       if (sg) {
@@ -707,6 +741,7 @@ void main(){
         if (segData[i] < 99) segData[i] = k.age;
       }
     });
+    if (style.prog === 'liquid' && touch.down && now - lastRipple.at > RIPPLE_EVERY) dropRipple(touch.x, touch.y);
     const rip = new Float32Array(RIPPLES * 3);
     ripples.forEach((r, i) => { r.age = Math.min(99, r.age + dt); rip.set([r.x, r.y, r.age], i * 3); });
     const pil = new Float32Array(SPAWNS * 4);

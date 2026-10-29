@@ -10,7 +10,8 @@ A colour a day, folded into palettes and liquid light.
 - **Visual**: a palette becomes a full-screen shader. Tap ◎ to save a still. Each style answers touch
   in its own way:
   - **liquid**: smooth domain-warped noise. Your finger draws a thick liquid-chrome trail that bends
-    the colours under it and slowly melts away. Taps (and drawing) send water ripples out.
+    the colours under it and slowly melts away. Chrome ripples spread out from your finger as you
+    tap, hold or draw.
   - **storm**: fast, finely detailed noise. Hold a finger down and lightning runs along the noise's own
     paths from it, with branches peeling off onto neighbouring veins; it heads the way you drag.
   - **ribs**: vertical stripes, each a slice of the palette from dark to light. Holding breaks them
