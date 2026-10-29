@@ -58,9 +58,12 @@ void main(){
   if (uDecay > .5 && uDecay < 1.5) {
     // Spread: each frame the trail grows a little into its surroundings (like ink spreading), so
     // older parts of a stroke are wider than where your finger just was.
-    vec2 o = uTexel * .7;
-    float n4 = max(max(texture2D(uPrev, uv + vec2(o.x, 0.)).r, texture2D(uPrev, uv - vec2(o.x, 0.)).r),
-                   max(texture2D(uPrev, uv + vec2(0., o.y)).r, texture2D(uPrev, uv - vec2(0., o.y)).r));
+    // Strongest of eight neighbours on a small circle: grows round (four axis neighbours grow a diamond).
+    float n4 = 0.;
+    for (int i = 0; i < 8; i++) {
+      float a = float(i) * .7854;
+      n4 = max(n4, texture2D(uPrev, uv + vec2(cos(a), sin(a)) * uTexel * .45).r);
+    }
     v = max(v * .4
       + (texture2D(uPrev, uv + vec2(uTexel.x, 0.)).r + texture2D(uPrev, uv - vec2(uTexel.x, 0.)).r
        + texture2D(uPrev, uv + vec2(0., uTexel.y)).r + texture2D(uPrev, uv - vec2(0., uTexel.y)).r) * .15,
