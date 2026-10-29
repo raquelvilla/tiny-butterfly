@@ -12,11 +12,14 @@ A colour a day, folded into palettes and liquid light.
 
 ## Run it
 
+Double-click **Tiny Butterfly** on the Desktop. It runs `launch.sh`, which starts the server on :8790 if
+it isn't already running, then opens http://localhost:8790.
+
+Or by hand:
+
 ```bash
 python3 serve.py
 ```
-
-Then open http://localhost:8790.
 
 ## On your phone
 
