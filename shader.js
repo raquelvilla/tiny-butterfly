@@ -386,7 +386,7 @@ void main(){
   g /= wsum;
   vec3 haze = mix(vec3(1.), palette(1.), .35);
   float glow = dot(g, vec3(.33));
-  vec3 col = line + (g * .5 + haze * glow * .9) / (1. + glow * 2.5); // a soft haze that never blows out
+  vec3 col = line + (g * .35 + haze * glow * .6) / (1. + glow * 2.5); // a soft haze that never blows out
   gl_FragColor = vec4(finish(col, .3, .025), 1.);
 }`,
 

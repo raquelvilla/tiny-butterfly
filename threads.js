@@ -244,11 +244,11 @@ const Threads = (() => {
         p.quadraticCurveTo(P.x[i], P.y[i], (P.x[i] + P.x[j]) / 2, (P.y[i] + P.y[j]) / 2);
       }
     }
-    ctx.lineWidth = 1.3 * px;
-    ctx.strokeStyle = 'rgba(255,255,255,.92)';
+    ctx.lineWidth = 0.7 * px;
+    ctx.strokeStyle = 'rgba(255,255,255,.78)';
     ctx.stroke(whole);
-    ctx.lineWidth = 0.9 * px;
-    ctx.strokeStyle = 'rgba(255,255,255,.3)';
+    ctx.lineWidth = 0.5 * px;
+    ctx.strokeStyle = 'rgba(255,255,255,.2)';
     ctx.stroke(torn);
 
     // flung particles: links between near neighbours, strings, then the nodes on top
@@ -283,13 +283,13 @@ const Threads = (() => {
         strings[P.ink[i]].lineTo(P.x[i], my);
       }
     }
-    ctx.globalAlpha = 0.75;
-    ctx.lineWidth = 1 * px;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 0.55 * px;
     inks.forEach((ink, k) => { ctx.strokeStyle = ink; ctx.stroke(byInk[k]); ctx.stroke(strings[k]); });
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.85;
     const dots = inks.map(() => new Path2D());
     for (const i of live) {
-      const r = (1.6 + 1.8 * P.e[i]) * px, d = dots[P.ink[i]];
+      const r = (1.1 + 1.2 * P.e[i]) * px, d = dots[P.ink[i]];
       d.moveTo(P.x[i] + r, P.y[i]);
       d.arc(P.x[i], P.y[i], r, 0, Math.PI * 2);
       if (P.string[i]) {
@@ -299,6 +299,7 @@ const Threads = (() => {
       }
     }
     inks.forEach((ink, k) => { ctx.fillStyle = ink; ctx.fill(dots[k]); });
+    ctx.globalAlpha = 1;
   }
 
   // Advance and redraw at the given size; returns the two canvases to upload.
