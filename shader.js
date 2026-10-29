@@ -1,22 +1,18 @@
 // Visual: full-screen WebGL shaders fed by a palette, played by touch and sound.
 // Each style is its own fragment shader sharing a common header, and each answers touch its own way:
-//   calm   — the nearest colour cloud is pulled to your finger
-//   liquid — taps send out ripples, drags leave a wake
+//   liquid — taps send out ripples; dragging leaves a trail of them
 //   ribs   — the ribs around your finger break into stepped tiles; dragging sideways changes their count
-//   glass  — the fluted strip follows your finger
 //   pills  — (no touch yet)
 const Visual = (() => {
   const FIELD = 2.2; // noise field units across the screen height
   const MAX_COLS = 6;
-  const RIPPLES = 4;
-  const WAKES = 6;
+  const RIPPLES = 12;
+  const RIPPLE_GAP = 0.06; // uv distance a drag travels between ripples
 
   const STYLES = {
-    calm: { prog: 'calm', speed: 0.07, warp: 0, bright: 1.0 },
     liquid: { prog: 'liquid', speed: 0.3, warp: 2.6, bright: 1.0 },
     storm: { prog: 'liquid', speed: 0.85, warp: 4.6, bright: 1.05 },
     ribs: { prog: 'ribs', speed: 0.35, warp: 0, bright: 1.0 },
-    glass: { prog: 'glass', speed: 0.3, warp: 0, bright: 1.0 },
     pills: { prog: 'pills', speed: 0.5, warp: 0, bright: 1.0 },
   };
 
@@ -30,7 +26,6 @@ uniform vec3 uCols[${MAX_COLS}];  // sorted dark -> light
 uniform vec3 uAudio;              // bass, mid, high (0..1)
 uniform vec3 uTouch;              // xy = finger in 0..1 uv, z = 0..1 how pressed (rises fast, heals slowly)
 uniform vec3 uRip[${RIPPLES}];     // ripples: xy = uv, z = age in seconds
-uniform vec4 uWake[${WAKES}];      // wake: xy = uv, zw = velocity (uv/s)
 #define FIELD ${FIELD.toFixed(2)}
 #define PI 3.14159265
 
@@ -64,41 +59,7 @@ vec3 finish(vec3 col, float vignette, float grain){
 `;
 
   const BODIES = {
-    // Soft clouds of each colour drifting on slow Lissajous paths. The nearest one comes to your finger.
-    calm: `
-vec2 cloud(int i, float t){
-  float fi = float(i);
-  return vec2(.5 + .4 * sin(t * (.7 + fi * .13) + fi * 2.1), .5 + .4 * cos(t * (.5 + fi * .11) + fi * 1.3));
-}
-void main(){
-  vec2 uv = gl_FragCoord.xy / uRes;
-  vec2 asp = vec2(uRes.x / uRes.y, 1.);
-  float t = uTime;
-  // The nearest cloud already colours the spot under your finger, so pull in the second-nearest.
-  float best = 1e9, second = 1e9; int near1 = 0, pick = 0;
-  for (int i = 0; i < ${MAX_COLS}; i++) {
-    if (float(i) > uCount - .5) break;
-    vec2 d = (cloud(i, t) - uTouch.xy) * asp;
-    float dd = dot(d, d);
-    if (dd < best) { second = best; pick = near1; best = dd; near1 = i; }
-    else if (dd < second) { second = dd; pick = i; }
-  }
-  vec3 acc = vec3(0.); float wsum = 0.;
-  for (int i = 0; i < ${MAX_COLS}; i++) {
-    if (float(i) > uCount - .5) break;
-    vec2 c = cloud(i, t);
-    float pull = i == pick ? uTouch.z : 0.;
-    c = mix(c, uTouch.xy, pull * .9);
-    vec2 d = (uv - c) * asp;
-    float w = exp(-dot(d, d) * (14. - uAudio.x * 6.)) * (1. + pull * 3.);
-    acc += uCols[i] * w; wsum += w;
-  }
-  vec3 col = acc / max(wsum, 1e-4);
-  col *= 1. + uAudio.z * .12;
-  gl_FragColor = vec4(finish(col, .1, .018), 1.);
-}`,
-
-    // Domain-warped fbm. Taps ripple outward; drags push the colour along like a wake.
+    // Domain-warped fbm. Taps ripple outward; drags leave a trail of ripples.
     liquid: `
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
@@ -112,10 +73,6 @@ void main(){
     float ring = exp(-pow((r - a * .45) * 14., 2.)) * exp(-a * 1.2);
     p += d / max(r, 1e-3) * ring * .3;
     glow += ring;
-  }
-  for (int i = 0; i < ${WAKES}; i++) {
-    vec2 d = (uv - uWake[i].xy) * asp;
-    p -= uWake[i].zw * asp * FIELD * .12 * exp(-dot(d, d) * 25.);
   }
   float t = uTime;
   float w = uWarp + uAudio.x * 3.;
@@ -159,27 +116,6 @@ void main(){
   gl_FragColor = vec4(finish(col, .12, .035), 1.);
 }`,
 
-    // A smooth gradient seen through a strip of fluted glass. The strip follows your finger.
-    glass: `
-void main(){
-  vec2 uv = gl_FragCoord.xy / uRes;
-  float t = uTime;
-  float cx = mix(.5 + .2 * sin(t * .5), uTouch.x, uTouch.z);
-  float hw = .13 + uAudio.x * .05;
-  float row = floor(uv.y * 7.);
-  float jitter = (hash(vec2(row, floor(t * 1.3))) - .5) * .035;   // stepped glitch slices
-  float bx = uv.x - (cx + jitter);
-  float inside = step(abs(bx), hw);
-  float ribs = 16.;
-  float k = fract((bx + hw) / (2. * hw) * ribs);
-  float sx = uv.x + inside * (k - .5) * (.22 + uAudio.y * .2);
-  float gx = sx + .07 * sin(t * .4 + uv.y * 1.1);
-  vec3 col = palette(gx);
-  col *= 1. - inside * .14 * smoothstep(.75, 1., k);
-  col += inside * .05 * smoothstep(.0, .2, k) * (1. - smoothstep(.2, .4, k));  // glint
-  gl_FragColor = vec4(finish(col, .1, .04), 1.);
-}`,
-
     // Columns of glowing pills on grainy charcoal; heights swell like an equaliser.
     pills: `
 void main(){
@@ -215,10 +151,9 @@ void main(){
   let cols = new Float32Array(MAX_COLS * 3), count = 2;
   let style = STYLES.liquid;
   const cur = { speed: style.speed, warp: style.warp, bright: style.bright };
-  const touch = { x: 0.5, y: 0.5, z: 0, down: 0, id: null, t: 0 };
+  const touch = { x: 0.5, y: 0.5, z: 0, down: 0, id: null };
   const ripples = Array.from({ length: RIPPLES }, () => ({ x: 0, y: 0, age: 99 }));
-  const wakes = Array.from({ length: WAKES }, () => ({ x: 0, y: 0, vx: 0, vy: 0 }));
-  let wakeNext = 0, wakeAt = 0;
+  const lastRipple = { x: 0, y: 0 };
   let ribExtra = 0; // ribs added/removed by dragging sideways
   const audio = { on: false, ctx: null, analyser: null, stream: null, data: null, lv: [0, 0, 0] };
 
@@ -240,7 +175,7 @@ void main(){
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     const U = {};
-    for (const n of ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uParam', 'uCols', 'uAudio', 'uTouch', 'uRip', 'uWake']) {
+    for (const n of ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uParam', 'uCols', 'uAudio', 'uTouch', 'uRip']) {
       U[n] = gl.getUniformLocation(prog, n);
     }
     return (programs[name] = { prog, U });
@@ -296,29 +231,26 @@ void main(){
     return [(e.clientX - r.left) / r.width, (r.bottom - e.clientY) / r.height];
   }
 
+  function dropRipple(x, y) {
+    const r = ripples.reduce((a, b) => (a.age > b.age ? a : b)); // reuse the oldest ripple
+    Object.assign(r, { x, y, age: 0 });
+    Object.assign(lastRipple, { x, y });
+  }
+
   function bindPointers() {
     canvas.addEventListener('pointerdown', (e) => {
       const [x, y] = toUV(e);
-      Object.assign(touch, { x, y, id: e.pointerId, t: performance.now() });
+      Object.assign(touch, { x, y, id: e.pointerId });
       touch.down++;
-      const r = ripples.reduce((a, b) => (a.age > b.age ? a : b)); // reuse the oldest ripple
-      Object.assign(r, { x, y, age: 0 });
+      dropRipple(x, y);
       try { canvas.setPointerCapture(e.pointerId); } catch {}
     });
     canvas.addEventListener('pointermove', (e) => {
       if (!touch.down || e.pointerId !== touch.id) return;
-      const now = performance.now();
-      const dt = Math.max(0.008, (now - touch.t) / 1000);
       const [x, y] = toUV(e);
-      const vx = Math.max(-3, Math.min(3, (x - touch.x) / dt));
-      const vy = Math.max(-3, Math.min(3, (y - touch.y) / dt));
       if (style.prog === 'ribs') ribExtra = Math.max(-8, Math.min(26, ribExtra + (x - touch.x) * 30));
-      Object.assign(touch, { x, y, t: now });
-      if (now - wakeAt > 45) {
-        wakeAt = now;
-        Object.assign(wakes[wakeNext], { x, y, vx, vy });
-        wakeNext = (wakeNext + 1) % WAKES;
-      }
+      Object.assign(touch, { x, y });
+      if (Math.hypot(x - lastRipple.x, y - lastRipple.y) > RIPPLE_GAP) dropRipple(x, y);
     });
     const lift = (e) => {
       if (!touch.down) return;
@@ -377,9 +309,6 @@ void main(){
 
     const rip = new Float32Array(RIPPLES * 3);
     ripples.forEach((r, i) => { r.age = Math.min(99, r.age + dt); rip.set([r.x, r.y, r.age], i * 3); });
-    const wake = new Float32Array(WAKES * 4);
-    const fade = Math.pow(0.12, dt);
-    wakes.forEach((w, i) => { w.vx *= fade; w.vy *= fade; wake.set([w.x, w.y, w.vx, w.vy], i * 4); });
 
     resize();
     const { prog, U } = program(style.prog);
@@ -394,7 +323,6 @@ void main(){
     gl.uniform3f(U.uAudio, lv[0], lv[1], lv[2]);
     gl.uniform3f(U.uTouch, touch.x, touch.y, touch.z);
     gl.uniform3fv(U.uRip, rip);
-    gl.uniform4fv(U.uWake, wake);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     raf = requestAnimationFrame(frame);
   }

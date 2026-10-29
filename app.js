@@ -11,7 +11,7 @@
   // ---- state --------------------------------------------------------------
   // { days: { 'YYYY-MM-DD': { hex, pantone, note, at } },
   //   palettes: [{ id, name, dates: [...], source: 'manual'|'harmony', createdAt }],
-  //   lastVisual: paletteId | null, lastStyle: 'calm'|'liquid'|… }
+  //   lastVisual: paletteId | null, lastStyle: 'liquid'|'storm'|'ribs'|'pills' }
   let state = load();
 
   function load() {
