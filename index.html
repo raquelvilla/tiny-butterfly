@@ -95,6 +95,10 @@
       <p class="vis-fallback" id="visFallback" hidden>This browser can't draw WebGL, so the visuals can't run here.</p>
       <div class="vis-ui" id="visUi">
         <select id="visPalette" aria-label="Palette"></select>
+        <label class="count" id="candleCount" hidden>
+          <input type="number" id="candleN" min="1" max="120" value="60" inputmode="numeric" aria-label="How many candles">
+          <span>candles</span>
+        </label>
         <div class="vis-btns">
           <button class="round" id="snapBtn" aria-label="Save a still" title="Save a still">◎</button>
           <button class="round" id="exitVisual" aria-label="Close" title="Close">✕</button>
@@ -106,6 +110,7 @@
           <button data-style="vapour">vapour</button>
           <button data-style="mist">mist</button>
           <button data-style="threads">threads</button>
+          <button data-style="candles">candles</button>
         </div>
       </div>
     </section>
@@ -131,6 +136,7 @@
 
   <script src="color.js"></script>
   <script src="threads.js"></script>
+  <script src="candles.js"></script>
   <script src="shader.js"></script>
   <script src="app.js"></script>
 </body>

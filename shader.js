@@ -31,6 +31,7 @@ const Visual = (() => {
     clouds: { prog: 'clouds', speed: 0.12, warp: 0, bright: 1.0 },
     vapour: { prog: 'vapour', speed: 1, warp: 0, bright: 1.0 },
     threads: { prog: 'threads', speed: 1, warp: 0, bright: 1.0 },
+    candles: { prog: 'candles', speed: 1, warp: 0, bright: 1.0 },
     mist: { prog: 'mist', speed: 1, warp: 0, bright: 1.0 },
   };
 
@@ -93,14 +94,13 @@ void main(){
 
   // Mist's fogged glass. R = how fogged (1 = fully): it slowly fogs back up, the finger wipes it clear.
   // G = water the finger pushed aside: it gathers in a ridge along the edges of each stroke and slowly
-  // evaporates. B = drips: water from the bottom of a ridge runs down, clearing a trail as it goes.
+  // evaporates. B is unused.
   // A = how wet the glass is: wiping dries it, so no drops sit or slide there until it slowly re-wets.
   const FOG = `
 precision highp float;
 uniform sampler2D uPrev;
 uniform vec2 uSize, uTexel, uA, uB;
 uniform float uOn, uR, uDt;
-float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 void main(){
   vec2 uv = gl_FragCoord.xy / uSize;
   vec4 c = texture2D(uPrev, uv);
@@ -113,15 +113,6 @@ void main(){
     v = min(1., v + uDt * .14);
     g = max(g - uDt * .05, 0.);                   // the ridge slowly evaporates
     w = min(1., w + uDt * .05);                   // the glass re-wets over ~20s
-    // drips: carried down from the texel above, slowing and thinning as they go
-    float above = texture2D(uPrev, uv + vec2(0., uTexel.y * 1.5)).b;
-    b = max(b * .85, above * .965);              // short runs that soon stop
-    // only a rare few columns drip, and only just after you draw (while the ridge is fresh and heavy)
-    float colId = floor(uv.x / uTexel.x / 2.);
-    float heavy = smoothstep(.88, .98, g) * step(.965, hash(vec2(colId, 3.1)));
-    float clearAbove = 1. - texture2D(uPrev, uv + vec2(0., uTexel.y * 6.)).r;
-    b = max(b, heavy * step(.5, clearAbove));
-    v = min(v, 1. - b * .6);                      // a running drip clears a faint trail behind it
   }
   vec2 asp = vec2(uSize.x / uSize.y, 1.);
   vec2 p = uv * asp, a = uA * asp, bb = uB * asp, pa = p - a, ba = bb - a;
@@ -130,7 +121,7 @@ void main(){
   float ridge = uOn * smoothstep(uR * .7, uR * 1.05, d) * smoothstep(uR * 1.6, uR * 1.1, d);
   v = min(v, 1. - wipe);
   g = max(g * (1. - wipe), ridge);                // water is swept out of the stroke onto its edges
-  b *= 1. - wipe;
+  b = 0.;
   w = min(w, 1. - wipe);
   gl_FragColor = vec4(v, g, b, w);
 }`;
@@ -425,6 +416,29 @@ void main(){
   gl_FragColor = vec4(finish(col, .25, .02), 1.);
 }`,
 
+    // The cake candles.js drew (uTrail), with the flames' warm glow (uVap) blurred out over the room.
+    candles: `
+uniform sampler2D uTrail, uVap;
+uniform vec2 uTexel;   // one texel of the small glow layer
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 scene = texture2D(uTrail, uv).rgb;
+  vec3 g = texture2D(uVap, uv).rgb * 2.;
+  float wsum = 2.;
+  for (int i = 0; i < 12; i++) {
+    float a = float(i) * .5236 + .26;
+    for (int j = 1; j <= 3; j++) {
+      float w = 1. / float(j);
+      g += texture2D(uVap, uv + vec2(cos(a), sin(a)) * uTexel * float(j) * 1.8).rgb * w;
+      wsum += w;
+    }
+  }
+  g /= wsum;
+  vec3 col = scene + g * .9;
+  col = col / (1. + max(col - .9, 0.) * .8);   // flames bloom without clipping hard
+  gl_FragColor = vec4(finish(col, .35, .02), 1.);
+}`,
+
     // The lines threads.js drew (uTrail), over a soft glow blurred from its small copy (uVap).
     threads: `
 uniform sampler2D uTrail, uVap;
@@ -505,13 +519,8 @@ void main(){
   vec4 a = water(p, uTime, 26., 0., .42 * onGlass, onGlass);
   vec4 b = water(p + 7.3, uTime * 1.2, 52., 4.2, .42 * onGlass, onGlass);
   vec4 e = water(p + 3.1, 0., 95., 8.6, smoothstep(.1, .9, F.g) * .85, 0.); // fine beads on the ridge you drew
-  // drips: a soft bead at the running front, its slope bending what's behind
-  vec2 T = 1. / uRes * 2.;
-  vec2 dg = vec2(texture2D(uTrail, uv + vec2(T.x, 0.)).b - texture2D(uTrail, uv - vec2(T.x, 0.)).b,
-                 texture2D(uTrail, uv + vec2(0., T.y)).b - texture2D(uTrail, uv - vec2(0., T.y)).b);
-  float drip = smoothstep(.5, .9, F.b) * .7;
-  float wet = max(max(a.z, b.z * .8), max(e.z, drip));
-  vec2 bend = a.xy / 26. + b.xy / 52. * .7 + e.xy / 95. * .7 - dg * .02;
+  float wet = max(max(a.z, b.z * .8), e.z);
+  vec2 bend = a.xy / 26. + b.xy / 52. * .7 + e.xy / 95. * .7;
   float fog = F.r * (1. - max(max(a.w, b.w * .7), wet));
 
   vec3 clear = behind(p - bend * 3., 4.);           // through clear glass and water: crisp and richer
@@ -523,7 +532,7 @@ void main(){
   vec3 col = mix(clear, misted, fog);
 
   // water catches the light from the top left, with a soft darker rim
-  vec3 n = normalize(vec3(-a.xy - b.xy * .6 - e.xy * .6 + dg * 6., 1.2));
+  vec3 n = normalize(vec3(-a.xy - b.xy * .6 - e.xy * .6, 1.2));
   float spec = pow(clamp(dot(reflect(-normalize(vec3(-.4, .6, .7)), n), vec3(0., 0., 1.)), 0., 1.), 24.);
   col *= 1. - .06 * smoothstep(.2, .9, length(a.xy)) * a.z;
   col += spec * wet * .55;
@@ -602,7 +611,7 @@ void main(){
   let grid = null;     // read-back of the storm noise: { w, h, tex, fb, buf, f }
   const drag = { x: 1, y: 0, amount: 0 }; // recent drag direction, and how much you're moving
   const light = { x: 0.28, y: 0.82 }; // clouds' sun; drifts to your finger and stays there
-  let threadTex = null; // threads: [lines, glow] textures, refilled from threads.js each frame
+  let threadTex = null; // 2D styles (threads, candles): [scene, glow] textures, refilled each frame
 
   function compile(type, src) {
     const s = gl.createShader(type);
@@ -803,6 +812,7 @@ void main(){
       fogProg = link(FOG, ['uPrev', 'uSize', 'uTexel', 'uA', 'uB', 'uOn', 'uR', 'uDt']);
       program('liquid');
       Threads.init();
+      Candles.init();
     } catch (err) {
       console.error(err);
       return false;
@@ -826,7 +836,12 @@ void main(){
     list.forEach((h, i) => Color.hexToRgb(h).forEach((v, j) => (cols[i * 3 + j] = v / 255)));
     count = list.length;
     Threads.setColours(cols, count);
+    Candles.setColours(cols, count);
   }
+
+  // Styles drawn in 2D (threads, candles) and composited here.
+  const painter = () => (style.prog === 'threads' ? Threads : style.prog === 'candles' ? Candles : null);
+  const setCandles = (n) => Candles.setCount(n);
 
   function uploadThreads(src) {
     if (!threadTex) {
@@ -1006,7 +1021,7 @@ void main(){
       touch.down++;
       path.length = 0;
       path.push([x, y, brushAt()], [x, y, brushAt()]); // a dot even if the finger never moves
-      if (style.prog === 'threads') Threads.pointer('down', x, y);
+      painter()?.pointer('down', x, y);
       if (style.prog === 'vapour') {
         const k = oldest(ice.filter((q) => !q.auto));
         Object.assign(k, { x, y, age: 0, seed: Math.random() * 50, held: true });
@@ -1023,7 +1038,7 @@ void main(){
         drag.amount = Math.min(1.5, drag.amount + len * 25);
       }
       Object.assign(touch, { x, y });
-      if (style.prog === 'threads') Threads.pointer('move', x, y);
+      painter()?.pointer('move', x, y);
       ice.forEach((k) => { if (k.held) Object.assign(k, { x, y }); });
       if (path.length < 48) path.push([x, y, brushAt()]);
     });
@@ -1031,7 +1046,7 @@ void main(){
       if (!touch.down) return;
       touch.down = Math.max(0, touch.down - 1);
       if (e.pointerId === touch.id) touch.id = null;
-      if (style.prog === 'threads') Threads.pointer('up', ...toUV(e));
+      painter()?.pointer('up', ...toUV(e));
       ice.forEach((k) => { k.held = false; });
     };
     canvas.addEventListener('pointerup', lift);
@@ -1081,8 +1096,7 @@ void main(){
     const vap = style.prog === 'vapour';
     const src = vap ? iceSources() : null;
     if (vap) stepVapour(dt, src);
-    const threads = style.prog === 'threads';
-    const drawn = threads && Threads.render(dt, canvas.width, canvas.height);
+    const drawn = painter()?.render(dt, canvas.width, canvas.height);
 
     const { prog, U } = program(style.prog);
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -1118,7 +1132,7 @@ void main(){
       gl.uniform1i(U.uTrail, 0);
       gl.uniform2f(U.uTexel, 1 / trail.w, 1 / trail.h);
     }
-    if (threads) {
+    if (drawn) {
       uploadThreads(drawn);
       gl.uniform1i(U.uTrail, 0);
       gl.uniform1i(U.uVap, 1);
@@ -1142,5 +1156,5 @@ void main(){
 
   const snapshot = () => new Promise((res) => (canvas ? canvas.toBlob(res, 'image/png') : res(null)));
 
-  return { init, start, stop, setPalette, setStyle, snapshot, styles: Object.keys(STYLES) };
+  return { init, start, stop, setPalette, setStyle, setCandles, snapshot, styles: Object.keys(STYLES) };
 })();

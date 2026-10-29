@@ -12,7 +12,8 @@
   // ---- state --------------------------------------------------------------
   // { days: { 'YYYY-MM-DD': { hex, note, at } (older entries may also carry a pantone) },
   //   palettes: [{ id, name, dates: [...], source: 'manual'|'harmony', createdAt }],
-  //   lastVisual: paletteId | null, lastStyle: 'liquid'|'storm'|'clouds'|'vapour'|'mist'|'threads' }
+  //   lastVisual: paletteId | null, lastStyle: 'liquid'|'storm'|'clouds'|'vapour'|'mist'|'threads'|'candles',
+  //   candles: how many candles on the cake (default 60) }
   let state = load();
 
   function load() {
@@ -390,6 +391,8 @@
     const chosen = sources.find((s) => s.id === state.lastVisual) || sources[0];
     sel.value = chosen.id;
     Visual.setPalette(chosen.hexes);
+    $('#candleN').value = state.candles || 60;
+    Visual.setCandles(state.candles || 60);
     setStyle(state.lastStyle);
     Visual.start();
     pokeUi();
@@ -407,8 +410,16 @@
     if (!Visual.styles.includes(name)) name = 'liquid';
     Visual.setStyle(name);
     for (const x of $('#styles').children) x.classList.toggle('on', x.dataset.style === name);
+    $('#candleCount').hidden = name !== 'candles';
     if (state.lastStyle !== name) { state.lastStyle = name; save(); }
   }
+  $('#candleN').addEventListener('change', (e) => {
+    const n = Math.max(1, Math.min(120, Math.round(Number(e.target.value)) || 60));
+    e.target.value = n;
+    state.candles = n;
+    save();
+    Visual.setCandles(n);
+  });
   $('#styles').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b) setStyle(b.dataset.style);

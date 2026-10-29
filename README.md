@@ -23,12 +23,15 @@ A colour a day, folded into palettes and liquid light.
     water beads on it (each a tiny lens), drops now and then slide down leaving clear wakes, and wisps
     of vapour drift across. Draw in the mist with your finger: the stroke wipes the glass clear and dry (every drop it
     touches is gone, and they only slowly come back), the
-    water you pushed aside gathers as fine beads along its edges, with the odd small trickle just
-    after you draw. It all slowly fogs back over.
+    water you pushed aside gathers as fine beads along its edges. It all slowly fogs back over.
   - **threads**: a bezier pen. Tap to place points (tap and drag to pull out their handles), drag a
     point to move it, drag a handle to bend the curve, double-tap a point to remove it. The curve is a
     fine glowing line in your palette with a light travelling along it; the points and handles fade
     away after a few seconds so you're left with just the line. Your curve is remembered.
+  - **candles**: a birthday cake covered in candles, striped in your palette (set how many in the
+    little field: 60 for a 60th). Swipe across to blow: flames lean away from your breath and the
+    nearest go out with a curl of smoke. Tap a candle to relight it; blow them all out and they relight
+    one after another.
 
 ## Run it
 
@@ -74,5 +77,6 @@ Palettes point at days, so changing a day's colour changes it in every palette t
 | `color.js` | hex parsing, OKLab/OKLCH, harmony suggestions |
 | `shader.js` | WebGL styles and their touch effects |
 | `threads.js` | the threads style's bezier pen (drawn in 2D, composited by `shader.js`) |
+| `candles.js` | the candles style's cake, flames and smoke (drawn in 2D, composited by `shader.js`) |
 | `sw.js`, `manifest.json`, `icons/` | installable / offline |
 | `tools/make_icons.py` | redraws the butterfly icons |
