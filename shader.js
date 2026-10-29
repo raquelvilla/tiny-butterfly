@@ -28,6 +28,7 @@ const Visual = (() => {
   const SOURCES = 6;        // vapour: 2 drifting ice pieces + up to 4 you drop
   const VAPOUR_SCALE = 0.8; // vapour buffer resolution relative to the canvas (higher = finer fibres)
   const ICE_LIFE = 12;      // seconds a dropped piece takes to sublimate away
+  const VAPOUR_LIFE = 2.5;  // seconds a wisp of vapour lives before it's gone
 
   const STYLES = {
     liquid: { prog: 'liquid', speed: 0.3, warp: 2.6, bright: 1.0 },
@@ -356,11 +357,12 @@ void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 asp = vec2(uRes.x / uRes.y, 1.);
   vec2 p = uv * asp;
-  float v = texture2D(uVap, uv).r;
+  vec4 V = texture2D(uVap, uv);
+  float v = V.r * pow(max(1. - V.g, 0.), 1.4);   // born bright, fades as it ages
   v = v / (1. + v * .35);                       // soften where plumes pile up
   vec3 c1 = palette(.3) * .5, c2 = palette(.7), c3 = mix(palette(1.), vec3(1.), .5);
-  vec3 col = mix(vec3(.006), c1, smoothstep(.0, .3, v));
-  col = mix(col, c2, smoothstep(.25, .7, v));
+  vec3 col = mix(vec3(.006), c1, smoothstep(.05, .35, v));   // faint vapour stays dark
+  col = mix(col, c2, smoothstep(.28, .7, v));
   col = mix(col, c3, smoothstep(.75, 1., v));
   for (int i = 0; i < ${SOURCES}; i++) {
     vec4 S = uSrc[i];
@@ -395,7 +397,7 @@ void main(){
   vec2 uv = gl_FragCoord.xy / uSize;
   vec2 asp = vec2(uSize.x / uSize.y, 1.);
   vec2 p = uv * asp;
-  vec2 vel = curl(p * 2.2 + vec2(0., uTime * .15)) * .18 + vec2(0., .12);
+  vec2 vel = curl(p * 1.6 + vec2(0., uTime * .12)) * .26 + vec2(0., .1);   // broad, sweeping currents
   float em = 0.;
   for (int i = 0; i < ${SOURCES}; i++) {
     vec4 S = uSrc[i];
@@ -405,12 +407,23 @@ void main(){
     vel += d / r * .5 * S.z * exp(-r * 5.);
     float ang = atan(d.y, d.x);
     float fib = noise(vec2(ang * 38. + S.w, uTime * 2. + S.w)) * noise(vec2(ang * 11. - S.w, uTime * .7));
-    em += exp(-r * 20.) * (.06 + pow(fib, 2.) * 5.) * S.z;
+    em += exp(-r * 34.) * (.04 + pow(fib, 2.) * 5.) * S.z;
   }
+  // Vapour has a lifecycle: R = density, G = age (0 newborn .. 1 dead). It's carried by the flow,
+  // ages every frame, and is gone at age 1, so only the last few seconds of vapour ever exist and
+  // the frame can't fill up. New vapour born at the ice resets the age where it lands.
   vec2 back = uv - vel / asp * uDt;
-  float f60 = uDt * 60.;                                       // fade per second, not per frame
-  float v = max(texture2D(uPrev, back).r * pow(.994, f60) - .0011 * f60, 0.) + em * uDt * 4.5;
-  gl_FragColor = vec4(vec3(min(v, 1.)), 1.);
+  vec4 prev = texture2D(uPrev, back);
+  float d = prev.r, age = prev.g;
+  float born = em * uDt * 3.;
+  born *= step(.0015, born);   // faint traces far from the ice don't count as births (or nothing would ever die)
+  age = mix(age, 0., born / max(d + born, 1e-4));
+  d = min(d + born, 1.);
+  age += uDt / ${VAPOUR_LIFE.toFixed(2)};
+  if (age >= 1.) d = 0.;
+  // 8-bit storage: dither so slow ageing still advances on average instead of rounding away.
+  float dz = (hash(gl_FragCoord.xy + fract(uTime * 7.3) * 113.) - .5) / 255.;
+  gl_FragColor = vec4(clamp(d + dz, 0., 1.), clamp(age + dz, 0., 1.), 0., 1.);
 }`,
   };
 
