@@ -29,6 +29,7 @@ const Visual = (() => {
     storm: { prog: 'storm', speed: 0.85, warp: 4.6, bright: 1.0 },
     clouds: { prog: 'clouds', speed: 0.12, warp: 0, bright: 1.0 },
     vapour: { prog: 'vapour', speed: 1, warp: 0, bright: 1.0 },
+    threads: { prog: 'threads', speed: 1, warp: 0, bright: 1.0 },
   };
 
   const VERT = `attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}`;
@@ -365,6 +366,30 @@ void main(){
   gl_FragColor = vec4(finish(col, .25, .02), 1.);
 }`,
 
+    // The lines threads.js drew (uTrail), over a soft glow blurred from its small copy (uVap).
+    threads: `
+uniform sampler2D uTrail, uVap;
+uniform vec2 uTexel;   // one texel of the small glow copy
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 line = texture2D(uTrail, uv).rgb;
+  vec3 g = texture2D(uVap, uv).rgb * 2.;
+  float wsum = 2.;
+  for (int i = 0; i < 12; i++) {
+    float a = float(i) * .5236 + .26;
+    for (int j = 1; j <= 3; j++) {
+      float w = 1. / float(j);
+      g += texture2D(uVap, uv + vec2(cos(a), sin(a)) * uTexel * float(j) * 1.4).rgb * w;
+      wsum += w;
+    }
+  }
+  g /= wsum;
+  vec3 haze = mix(vec3(1.), palette(1.), .35);
+  float glow = dot(g, vec3(.33));
+  vec3 col = line + (g * .5 + haze * glow * .9) / (1. + glow * 2.5); // a soft haze that never blows out
+  gl_FragColor = vec4(finish(col, .3, .025), 1.);
+}`,
+
     // One step of the vapour simulation: carry last frame's vapour along a swirling flow (curl noise,
     // a gentle rise, and a push outward from each piece), fade it, and emit new fibres around each
     // piece. Fibres are angular noise around the core, so they stream out as hair-like strands.
@@ -435,6 +460,7 @@ void main(){
   let grid = null;     // read-back of the storm noise: { w, h, tex, fb, buf, f }
   const drag = { x: 1, y: 0, amount: 0 }; // recent drag direction, and how much you're moving
   const light = { x: 0.28, y: 0.82 }; // clouds' sun; drifts to your finger and stays there
+  let threadTex = null; // threads: [lines, glow] textures, refilled from threads.js each frame
 
   function compile(type, src) {
     const s = gl.createShader(type);
@@ -603,6 +629,7 @@ void main(){
       gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
       trailProg = link(TRAIL, ['uPrev', 'uSize', 'uTexel', 'uA', 'uB', 'uOn', 'uR', 'uDecay', 'uPress']);
       program('liquid');
+      Threads.init();
     } catch (err) {
       console.error(err);
       return false;
@@ -625,6 +652,31 @@ void main(){
     cols = new Float32Array(MAX_COLS * 3);
     list.forEach((h, i) => Color.hexToRgb(h).forEach((v, j) => (cols[i * 3 + j] = v / 255)));
     count = list.length;
+    Threads.setColours(cols, count);
+  }
+
+  // The words threads writes out (the palette's name).
+  const setWord = (w) => Threads.setWord(w);
+
+  function uploadThreads(src) {
+    if (!threadTex) {
+      threadTex = [0, 1].map(() => {
+        const t = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        return t;
+      });
+    }
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    [src.lines, src.glow].forEach((c, i) => {
+      gl.activeTexture(gl.TEXTURE0 + i);
+      gl.bindTexture(gl.TEXTURE_2D, threadTex[i]);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+    });
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   }
 
   function setStyle(name) {
@@ -854,6 +906,8 @@ void main(){
     const vap = style.prog === 'vapour';
     const src = vap ? iceSources() : null;
     if (vap) stepVapour(dt, src);
+    const threads = style.prog === 'threads';
+    const drawn = threads && Threads.render(dt, canvas.width, canvas.height, touch.down ? [touch.x, touch.y] : null);
 
     const { prog, U } = program(style.prog);
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -884,6 +938,12 @@ void main(){
       gl.uniform1i(U.uTrail, 0);
       gl.uniform2f(U.uTexel, 1 / trail.w, 1 / trail.h);
     }
+    if (threads) {
+      uploadThreads(drawn);
+      gl.uniform1i(U.uTrail, 0);
+      gl.uniform1i(U.uVap, 1);
+      gl.uniform2f(U.uTexel, 1 / drawn.glow.width, 1 / drawn.glow.height);
+    }
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     raf = requestAnimationFrame(frame);
   }
@@ -902,5 +962,5 @@ void main(){
 
   const snapshot = () => new Promise((res) => (canvas ? canvas.toBlob(res, 'image/png') : res(null)));
 
-  return { init, start, stop, setPalette, setStyle, snapshot, styles: Object.keys(STYLES) };
+  return { init, start, stop, setPalette, setWord, setStyle, snapshot, styles: Object.keys(STYLES) };
 })();

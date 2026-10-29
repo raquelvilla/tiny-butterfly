@@ -393,6 +393,7 @@
     const chosen = sources.find((s) => s.id === state.lastVisual) || sources[0];
     sel.value = chosen.id;
     Visual.setPalette(chosen.hexes);
+    Visual.setWord(chosen.name);
     setStyle(state.lastStyle);
     Visual.start();
     pokeUi();
@@ -404,6 +405,7 @@
     state.lastVisual = s.id;
     save();
     Visual.setPalette(s.hexes);
+    Visual.setWord(s.name);
   });
 
   function setStyle(name) {
