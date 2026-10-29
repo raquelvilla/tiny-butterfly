@@ -330,9 +330,9 @@ void main(){
 
   vec3 sky = mix(palette(.45), palette(.12), uv.y);
   vec3 col = mix(sky, vec3(dot(sky, vec3(.3, .59, .11))), .3) * .8;   // a little desaturated, like a photo
-  float sun = exp(-dist * dist * 7.);
+  float sun = exp(-dist * dist * 16.);
   vec3 sunCol = mix(palette(1.), vec3(1., .96, .88), .55);
-  col += sunCol * (sun * .7 + exp(-dist * 2.4) * .38);        // wide warm halo
+  col += sunCol * (sun * .6 + exp(-dist * 3.6) * .3);         // warm halo
   vec3 litCol = mix(palette(.85), vec3(1.), .55);
   vec3 shadowCol = mix(palette(.25), litCol, .3) * .75;
   float cover = 0.;
@@ -365,7 +365,7 @@ void main(){
   col += sunCol * rays * .4 * (1. - cover * .5);
   // the sun itself: a soft bright disc that shows through thin cloud and dims behind thick
   // the sun itself: a soft disc with a hot core, rolled off (not clipped) by the filmic curve below
-  col += sunCol * (smoothstep(.09, .02, dist) * 1.8 + exp(-dist * dist * 160.) * 3.) * (1. - cover * .45);
+  col += sunCol * (smoothstep(.045, .012, dist) * 1.8 + exp(-dist * dist * 450.) * 3.) * (1. - cover * .45);
   gl_FragColor = vec4(finish(filmic(col * 1.15), .2, .018), 1.);
 }`,
   };
