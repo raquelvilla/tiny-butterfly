@@ -209,8 +209,12 @@ body.visual-on .top, body.visual-on .tabs { display: none; }
   color: #fff; max-width: 170px;
 }
 .vis-ui select option { color: #000; }
-.seg { display: flex; background: rgba(255, 255, 255, .1); border-radius: 999px; padding: 3px; }
-.seg button { border: 0; background: transparent; color: rgba(255, 255, 255, .7); padding: 6px 12px; border-radius: 999px; cursor: pointer; font-size: 14px; }
+.seg {
+  display: flex; background: rgba(255, 255, 255, .1); border-radius: 999px; padding: 3px;
+  max-width: 100%; overflow-x: auto; scrollbar-width: none;
+}
+.seg::-webkit-scrollbar { display: none; }
+.seg button { flex: none; border: 0; background: transparent; color: rgba(255, 255, 255, .7); padding: 6px 12px; border-radius: 999px; cursor: pointer; font-size: 14px; }
 .seg button.on { background: rgba(255, 255, 255, .9); color: #111; }
 .vis-btns { display: flex; gap: 6px; }
 .round {

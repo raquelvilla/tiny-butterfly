@@ -1,22 +1,32 @@
-// Visual: full-screen WebGL shader gradient fed by a palette, stirred by touch and sound.
+// Visual: full-screen WebGL shaders fed by a palette, stirred by touch and sound.
+// Each style is its own fragment shader sharing a common header (palette, noise, touch swirls, grain).
 const Visual = (() => {
   const FIELD = 2.2; // field units across the screen height; touch coords use the same scale
   const MAX_COLS = 6;
   const SWIRLS = 4;
-  const PRESETS = {
-    calm: { warp: 1.4, speed: 0.12, bright: 1.0 },
-    liquid: { warp: 2.6, speed: 0.3, bright: 1.0 },
-    storm: { warp: 4.6, speed: 0.85, bright: 1.05 },
+
+  // prog: which shader; speed: time scale; warp: liquid only; touch: swirl strength.
+  const STYLES = {
+    calm: { prog: 'calm', speed: 0.07, warp: 0, touch: 0.45, bright: 1.0 },
+    liquid: { prog: 'liquid', speed: 0.3, warp: 2.6, touch: 1, bright: 1.0 },
+    storm: { prog: 'liquid', speed: 0.85, warp: 4.6, touch: 1, bright: 1.05 },
+    ribs: { prog: 'ribs', speed: 0.35, warp: 0, touch: 0.8, bright: 1.0 },
+    glass: { prog: 'glass', speed: 0.3, warp: 0, touch: 0.5, bright: 1.0 },
+    pills: { prog: 'pills', speed: 0.5, warp: 0, touch: 0.6, bright: 1.0 },
   };
 
   const VERT = `attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}`;
-  const FRAG = `
+
+  const COMMON = `
 precision highp float;
 uniform vec2 uRes;
 uniform float uTime, uWarp, uBright, uCount;
-uniform vec3 uCols[${MAX_COLS}];
-uniform vec3 uSw[${SWIRLS}];   // xy = centre (field units), z = twist
-uniform vec3 uAudio;           // bass, mid, high (0..1)
+uniform vec3 uCols[${MAX_COLS}];  // sorted dark -> light
+uniform vec3 uSw[${SWIRLS}];      // xy = centre (field units), z = twist
+uniform vec3 uAudio;              // bass, mid, high (0..1)
+uniform vec3 uTouch;              // xy = finger in 0..1 screen uv, z = 1 while touching (eased)
+#define FIELD ${FIELD.toFixed(2)}
+#define PI 3.14159265
 
 float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float noise(vec2 p){
@@ -38,14 +48,54 @@ vec3 palette(float x){
   }
   return c;
 }
-void main(){
-  vec2 p = gl_FragCoord.xy / uRes.y * ${FIELD.toFixed(2)};
+// Field position (square units, height = FIELD), twisted by finger swirls.
+vec2 swirled(){
+  vec2 p = gl_FragCoord.xy / uRes.y * FIELD;
   for (int i = 0; i < ${SWIRLS}; i++) {
     vec2 d = p - uSw[i].xy;
     float a = uSw[i].z * exp(-dot(d, d) * 4.);
     float c = cos(a), s = sin(a);
     p = uSw[i].xy + mat2(c, s, -s, c) * d;
   }
+  return p;
+}
+// Same, as 0..1 screen uv.
+vec2 swirledUV(){ vec2 p = swirled() / FIELD; return vec2(p.x * uRes.y / uRes.x, p.y); }
+vec3 finish(vec3 col, float vignette, float grain){
+  col *= uBright;
+  vec2 uv = gl_FragCoord.xy / uRes;
+  col *= mix(1. - vignette, 1., smoothstep(1.05, .35, length(uv - .5)));
+  col += (hash(gl_FragCoord.xy + fract(uTime * 3.7) * 91.) - .5) * grain;
+  return col;
+}
+`;
+
+  const BODIES = {
+    // Soft clouds of each colour drifting on slow Lissajous paths. No noise texture.
+    calm: `
+void main(){
+  vec2 uv = swirledUV();
+  vec2 asp = vec2(uRes.x / uRes.y, 1.);
+  float t = uTime;
+  vec3 acc = vec3(0.); float wsum = 0.;
+  for (int i = 0; i < ${MAX_COLS}; i++) {
+    if (float(i) > uCount - .5) break;
+    float fi = float(i);
+    vec2 c = vec2(.5 + .4 * sin(t * (.7 + fi * .13) + fi * 2.1),
+                  .5 + .4 * cos(t * (.5 + fi * .11) + fi * 1.3));
+    vec2 d = (uv - c) * asp;
+    float w = exp(-dot(d, d) * (14. - uAudio.x * 6.));
+    acc += uCols[i] * w; wsum += w;
+  }
+  vec3 col = acc / max(wsum, 1e-4);
+  col *= 1. + uAudio.z * .12;
+  gl_FragColor = vec4(finish(col, .1, .018), 1.);
+}`,
+
+    // Domain-warped fbm: the original liquid look (calm/storm energy via uWarp + speed).
+    liquid: `
+void main(){
+  vec2 p = swirled();
   float t = uTime;
   float w = uWarp + uAudio.x * 3.;
   vec2 q = vec2(fbm(p + vec2(0., t * .12)), fbm(p + vec2(5.2, 1.3) - t * .1));
@@ -54,19 +104,86 @@ void main(){
   float x = smoothstep(.3, .7, f + (r.x - .5) * .45);
   vec3 col = palette(x);
   col *= .9 + .2 * smoothstep(.3, .8, f) + uAudio.z * .35;
-  col *= uBright;
-  vec2 uv = gl_FragCoord.xy / uRes;
-  col *= mix(.82, 1., smoothstep(1.05, .35, length(uv - .5)));
-  col += (hash(gl_FragCoord.xy + fract(t) * 91.) - .5) * .03;
-  gl_FragColor = vec4(col, 1.);
-}`;
+  gl_FragColor = vec4(finish(col, .18, .03), 1.);
+}`,
 
-  let canvas, gl, U = {};
+    // Vertical ribs, each showing a drifting slice of the palette, dark edge -> light edge.
+    ribs: `
+void main(){
+  vec2 uv = swirledUV();
+  float asp = uRes.x / uRes.y;
+  float n = floor(5. + 6. * asp);
+  float t = uTime;
+  float x = uv.x * n + sin(uv.y * 2.4 + t) * (.1 + uAudio.x * .5);
+  float id = floor(x);
+  float u = fract(x);
+  float base = .5 + .3 * sin(t * .5 + id * .45 + uv.y * .8);  // where this rib sits in the palette
+  float span = .4;
+  vec3 col = palette(base - span * .5 + span * smoothstep(0., 1., u));
+  col *= mix(.55, 1., smoothstep(0., .35, u));   // shadow on the rib's leading edge
+  col *= 1. - smoothstep(.95, 1., u) * .25;      // crease
+  col *= 1. + uAudio.z * .2;
+  gl_FragColor = vec4(finish(col, .12, .035), 1.);
+}`,
+
+    // A smooth gradient seen through a strip of fluted glass. The strip follows your finger.
+    glass: `
+void main(){
+  vec2 uv = swirledUV();
+  float t = uTime;
+  float cx = mix(.5 + .2 * sin(t * .5), uTouch.x, uTouch.z);
+  float hw = .13 + uAudio.x * .05;
+  float row = floor(uv.y * 7.);
+  float jitter = (hash(vec2(row, floor(t * 1.3))) - .5) * .035;   // stepped glitch slices
+  float bx = uv.x - (cx + jitter);
+  float inside = step(abs(bx), hw);
+  float ribs = 16.;
+  float k = fract((bx + hw) / (2. * hw) * ribs);
+  float sx = uv.x + inside * (k - .5) * (.22 + uAudio.y * .2);
+  float gx = sx + .07 * sin(t * .4 + uv.y * 1.1);
+  vec3 col = palette(gx);
+  col *= 1. - inside * .14 * smoothstep(.75, 1., k);
+  col += inside * .05 * smoothstep(.0, .2, k) * (1. - smoothstep(.2, .4, k));  // glint
+  gl_FragColor = vec4(finish(col, .1, .04), 1.);
+}`,
+
+    // Columns of glowing pills on grainy charcoal; heights swell like an equaliser.
+    pills: `
+void main(){
+  vec2 uv = swirledUV();
+  float asp = uRes.x / uRes.y;
+  float n = floor(10. + 10. * asp);
+  float t = uTime;
+  float id = floor(uv.x * n);
+  float u = fract(uv.x * n) - .5;
+  float s = (id + .5) / n;
+  float env = sin(PI * s);
+  vec3 col = vec3(.165, .158, .165);
+  for (int L = 0; L < 2; L++) {
+    float fl = float(L);
+    float wave = .5 + .5 * sin(s * 5. - t * 1.2 + fl * 1.9);
+    float level = fl < .5 ? uAudio.y : uAudio.x;
+    float h = (.04 + .22 * env * wave) * (1. + level * 1.3);
+    float cy = (fl < .5 ? .6 : .4) + .1 * sin(s * 3. + t * .6 + fl * 2.2);
+    float w = .32 * (.25 + .75 * env);
+    vec2 d = vec2(u / w, (uv.y - cy) / h);
+    float m = 1. - smoothstep(.9, 1., length(d));
+    float g = fl < .5 ? mix(.45, 1., s) + d.y * .12 : mix(0., .6, s) - d.y * .1;
+    vec3 pc = palette(g) * (.82 + .3 * (d.y * .5 + .5));
+    col = mix(col, pc, m);
+  }
+  gl_FragColor = vec4(finish(col, .08, .06), 1.);
+}`,
+  };
+
+  let canvas, gl;
+  const programs = {};
   let running = false, raf = 0, last = 0, time = 0;
   let cols = new Float32Array(MAX_COLS * 3), count = 2;
-  const target = { ...PRESETS.liquid };
-  const cur = { ...PRESETS.liquid };
+  let style = STYLES.liquid;
+  const cur = { speed: style.speed, warp: style.warp, bright: style.bright };
   const swirls = Array.from({ length: SWIRLS }, () => ({ x: 0, y: 0, tx: 0, ty: 0, twist: 0, spin: 0, id: null, lx: 0, ly: 0 }));
+  const touch = { x: 0.5, y: 0.5, z: 0, down: 0 };
   const audio = { on: false, ctx: null, analyser: null, stream: null, data: null, lv: [0, 0, 0] };
 
   function compile(type, src) {
@@ -77,25 +194,32 @@ void main(){
     return s;
   }
 
+  // Compiled on first use and cached.
+  function program(name) {
+    if (programs[name]) return programs[name];
+    const prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, COMMON + BODIES[name]));
+    gl.bindAttribLocation(prog, 0, 'a');
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    const U = {};
+    for (const n of ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uCols', 'uSw', 'uAudio', 'uTouch']) {
+      U[n] = gl.getUniformLocation(prog, n);
+    }
+    return (programs[name] = { prog, U });
+  }
+
   function init(c) {
     canvas = c;
     gl = c.getContext('webgl', { preserveDrawingBuffer: true, antialias: false, alpha: false });
     if (!gl) return false;
     try {
-      const prog = gl.createProgram();
-      gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
-      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
-      gl.linkProgram(prog);
-      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
-      gl.useProgram(prog);
       gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-      const loc = gl.getAttribLocation(prog, 'a');
-      gl.enableVertexAttribArray(loc);
-      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-      for (const n of ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uCols', 'uSw', 'uAudio']) {
-        U[n] = gl.getUniformLocation(prog, n);
-      }
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      program('liquid');
     } catch (err) {
       console.error(err);
       return false;
@@ -113,7 +237,7 @@ void main(){
     gl.viewport(0, 0, w, h);
   }
 
-  // Colours sorted dark → light so the gradient flows instead of jumping.
+  // Colours sorted dark → light so gradients flow instead of jumping.
   function setPalette(hexes) {
     let list = hexes.slice(0, MAX_COLS);
     if (list.length === 1) list = [list[0], list[0]];
@@ -123,12 +247,22 @@ void main(){
     count = list.length;
   }
 
-  function setPreset(name) { Object.assign(target, PRESETS[name] || PRESETS.liquid); }
+  function setStyle(name) {
+    style = STYLES[name] || STYLES.liquid;
+    if (gl) {
+      try { program(style.prog); } catch (err) { console.error(err); style = STYLES.liquid; }
+    }
+  }
 
   // ---- touch: each finger drags a swirl; twist follows how fast you move ----
   function toField(e) {
     const r = canvas.getBoundingClientRect();
     return [((e.clientX - r.left) / r.height) * FIELD, ((r.bottom - e.clientY) / r.height) * FIELD];
+  }
+  function toUV(e) {
+    const r = canvas.getBoundingClientRect();
+    touch.x = (e.clientX - r.left) / r.width;
+    touch.y = (r.bottom - e.clientY) / r.height;
   }
 
   function bindPointers() {
@@ -138,6 +272,8 @@ void main(){
       const [x, y] = toField(e);
       Object.assign(s, { id: e.pointerId, x, y, tx: x, ty: y, lx: e.clientX, ly: e.clientY });
       s.spin += (Math.random() < 0.5 ? -1 : 1) * 0.6; // a tap alone gives a little stir
+      toUV(e);
+      touch.down++;
       canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener('pointermove', (e) => {
@@ -147,8 +283,14 @@ void main(){
       s.lx = e.clientX; s.ly = e.clientY;
       [s.tx, s.ty] = toField(e);
       s.spin = Math.max(-4, Math.min(4, s.spin + (dx - dy * 0.5) * 0.012));
+      toUV(e);
     });
-    const lift = (e) => { const s = swirls.find((x) => x.id === e.pointerId); if (s) s.id = null; };
+    const lift = (e) => {
+      const s = swirls.find((x) => x.id === e.pointerId);
+      if (!s) return;
+      s.id = null;
+      touch.down = Math.max(0, touch.down - 1);
+    };
     canvas.addEventListener('pointerup', lift);
     canvas.addEventListener('pointercancel', lift);
   }
@@ -190,9 +332,13 @@ void main(){
     if (!running) return;
     const dt = Math.min(0.05, (now - last) / 1000 || 0);
     last = now;
-    for (const k of Object.keys(cur)) cur[k] += (target[k] - cur[k]) * Math.min(1, dt * 2);
+    const ease = Math.min(1, dt * 2);
+    cur.speed += (style.speed - cur.speed) * ease;
+    cur.warp += (style.warp - cur.warp) * ease;
+    cur.bright += (style.bright - cur.bright) * ease;
     const lv = readAudio();
     time += dt * cur.speed * (1 + lv[1] * 2.5);
+    touch.z += ((touch.down ? 1 : 0) - touch.z) * Math.min(1, dt * (touch.down ? 8 : 1.5));
 
     const sw = new Float32Array(SWIRLS * 3);
     swirls.forEach((s, i) => {
@@ -200,10 +346,12 @@ void main(){
       s.y += (s.ty - s.y) * Math.min(1, dt * 10);
       s.spin *= Math.pow(s.id === null ? 0.25 : 0.6, dt); // fades over ~2s once lifted
       s.twist += (s.spin - s.twist) * Math.min(1, dt * 6);
-      sw.set([s.x, s.y, s.twist], i * 3);
+      sw.set([s.x, s.y, s.twist * style.touch], i * 3);
     });
 
     resize();
+    const { prog, U } = program(style.prog);
+    gl.useProgram(prog);
     gl.uniform2f(U.uRes, canvas.width, canvas.height);
     gl.uniform1f(U.uTime, time);
     gl.uniform1f(U.uWarp, cur.warp);
@@ -212,6 +360,7 @@ void main(){
     gl.uniform3fv(U.uCols, cols);
     gl.uniform3fv(U.uSw, sw);
     gl.uniform3f(U.uAudio, lv[0], lv[1], lv[2]);
+    gl.uniform3f(U.uTouch, touch.x, touch.y, touch.z);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     raf = requestAnimationFrame(frame);
   }
@@ -231,5 +380,5 @@ void main(){
 
   const snapshot = () => new Promise((res) => (canvas ? canvas.toBlob(res, 'image/png') : res(null)));
 
-  return { init, start, stop, setPalette, setPreset, toggleMic, snapshot };
+  return { init, start, stop, setPalette, setStyle, toggleMic, snapshot, styles: Object.keys(STYLES) };
 })();

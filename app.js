@@ -11,7 +11,7 @@
   // ---- state --------------------------------------------------------------
   // { days: { 'YYYY-MM-DD': { hex, pantone, note, at } },
   //   palettes: [{ id, name, dates: [...], source: 'manual'|'harmony', createdAt }],
-  //   lastVisual: paletteId | null }
+  //   lastVisual: paletteId | null, lastStyle: 'calm'|'liquid'|… }
   let state = load();
 
   function load() {
@@ -392,6 +392,7 @@
     const chosen = sources.find((s) => s.id === state.lastVisual) || sources[0];
     sel.value = chosen.id;
     Visual.setPalette(chosen.hexes);
+    setStyle(state.lastStyle);
     Visual.start();
     pokeUi();
   }
@@ -404,13 +405,16 @@
     Visual.setPalette(s.hexes);
   });
 
-  $('#presets').addEventListener('click', (e) => {
+  function setStyle(name) {
+    if (!Visual.styles.includes(name)) name = 'liquid';
+    Visual.setStyle(name);
+    for (const x of $('#styles').children) x.classList.toggle('on', x.dataset.style === name);
+    if (state.lastStyle !== name) { state.lastStyle = name; save(); }
+  }
+  $('#styles').addEventListener('click', (e) => {
     const b = e.target.closest('button');
-    if (!b) return;
-    Visual.setPreset(b.dataset.preset);
-    for (const x of $('#presets').children) x.classList.toggle('on', x === b);
+    if (b) setStyle(b.dataset.style);
   });
-  $('#presets').querySelector('[data-preset="liquid"]').classList.add('on');
 
   $('#micBtn').addEventListener('click', async () => {
     try {
