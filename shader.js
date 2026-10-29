@@ -58,6 +58,7 @@ void main(){
     float n = texture2D(uPrev, uv + vec2(uTexel.x, 0.)).g + texture2D(uPrev, uv - vec2(uTexel.x, 0.)).g
             + texture2D(uPrev, uv + vec2(0., uTexel.y)).g + texture2D(uPrev, uv - vec2(0., uTexel.y)).g;
     float hn = ((n * 2. - 4.) * .5 - hp) * .99;    // neighbours' average x2, minus last step, damped
+    hn = mix(hn, (n * 2. - 4.) * .25, .05);         // a little viscosity: wavefronts stay soft and rounded
     hp = h;
     h = hn;
   }
@@ -173,12 +174,15 @@ void main(){
   // Ripples: a packet of concentric crests travels outward and fades, bending the colour slightly
   // and catching light on each crest so it reads as a ring.
   // The water surface's slope joins the trail's slope as one chrome surface, so waves shade like chrome.
-  vec2 w = uTexel * 1.5;
-  vec2 slope = vec2(texture2D(uTrail, uv + vec2(w.x, 0.)).g - texture2D(uTrail, uv - vec2(w.x, 0.)).g,
-                    texture2D(uTrail, uv + vec2(0., w.y)).g - texture2D(uTrail, uv - vec2(0., w.y)).g) * 7.;
+  // slope taken over a wide span at two scales, so the rings read as soft swells, not drawn lines
+  vec2 w = uTexel * 3., W2 = uTexel * 6.;
+  vec2 slope = (vec2(texture2D(uTrail, uv + vec2(w.x, 0.)).g - texture2D(uTrail, uv - vec2(w.x, 0.)).g,
+                     texture2D(uTrail, uv + vec2(0., w.y)).g - texture2D(uTrail, uv - vec2(0., w.y)).g)
+              + vec2(texture2D(uTrail, uv + vec2(W2.x, 0.)).g - texture2D(uTrail, uv - vec2(W2.x, 0.)).g,
+                     texture2D(uTrail, uv + vec2(0., W2.y)).g - texture2D(uTrail, uv - vec2(0., W2.y)).g) * .5) * 3.6;
   p += slope * .25;
   n = normalize(vec3(-hx - slope.x, -hy - slope.y, .3));
-  body = max(body, smoothstep(.04, .35, length(slope)));
+  body = max(body, smoothstep(.05, .6, length(slope)) * .8);
 
   float f;
   vec3 col = field(p, 3., f);
