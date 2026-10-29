@@ -74,21 +74,23 @@ void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 asp = vec2(uRes.x / uRes.y, 1.);
   float t = uTime;
-  float best = 1e9; int pick = 0;
+  // The nearest cloud already colours the spot under your finger, so pull in the second-nearest.
+  float best = 1e9, second = 1e9; int near1 = 0, pick = 0;
   for (int i = 0; i < ${MAX_COLS}; i++) {
     if (float(i) > uCount - .5) break;
     vec2 d = (cloud(i, t) - uTouch.xy) * asp;
     float dd = dot(d, d);
-    if (dd < best) { best = dd; pick = i; }
+    if (dd < best) { second = best; pick = near1; best = dd; near1 = i; }
+    else if (dd < second) { second = dd; pick = i; }
   }
   vec3 acc = vec3(0.); float wsum = 0.;
   for (int i = 0; i < ${MAX_COLS}; i++) {
     if (float(i) > uCount - .5) break;
     vec2 c = cloud(i, t);
     float pull = i == pick ? uTouch.z : 0.;
-    c = mix(c, uTouch.xy, pull * .85);
+    c = mix(c, uTouch.xy, pull * .9);
     vec2 d = (uv - c) * asp;
-    float w = exp(-dot(d, d) * (14. - uAudio.x * 6. - pull * 4.));
+    float w = exp(-dot(d, d) * (14. - uAudio.x * 6.)) * (1. + pull * 3.);
     acc += uCols[i] * w; wsum += w;
   }
   vec3 col = acc / max(wsum, 1e-4);

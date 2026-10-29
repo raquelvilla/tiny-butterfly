@@ -9,7 +9,8 @@ A colour a day, folded into palettes and liquid light.
   tetradic). Tap a colour in a suggestion to swap it. *Keep* saves it, and *Tweak* opens it in the builder.
 - **Visual**: a palette becomes a full-screen shader. Tap 🎙 to make it react to sound, and tap ◎ to
   save a still. Each style answers touch in its own way:
-  - **calm**: soft colour clouds drifting very slowly. The nearest cloud comes to your finger.
+  - **calm**: soft colour clouds drifting very slowly. Hold, and a neighbouring colour flows in under
+    your finger.
   - **liquid** / **storm**: domain-warped noise, gentle or wild. Taps ripple out, and drags leave a wake.
   - **ribs**: vertical stripes, each a slice of the palette from dark to light. Holding breaks them
     into stepped tiles that heal when you let go. Dragging sideways adds or removes ribs.
