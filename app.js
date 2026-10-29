@@ -416,16 +416,6 @@
     if (b) setStyle(b.dataset.style);
   });
 
-  $('#micBtn').addEventListener('click', async () => {
-    try {
-      const on = await Visual.toggleMic();
-      $('#micBtn').classList.toggle('on', on);
-      toast(on ? 'Listening — make some noise' : 'Mic off');
-    } catch (err) {
-      toast(err.name === 'NotAllowedError' ? 'Mic permission was declined' : 'The mic needs localhost or https');
-    }
-  });
-
   $('#snapBtn').addEventListener('click', async () => {
     const blob = await Visual.snapshot();
     if (!blob) return toast('Could not capture a still');

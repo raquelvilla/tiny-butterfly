@@ -1,4 +1,4 @@
-// Visual: full-screen WebGL shaders fed by a palette, played by touch and sound.
+// Visual: full-screen WebGL shaders fed by a palette, played by touch.
 // Each style is its own fragment shader sharing a common header, and each answers touch its own way:
 //   liquid — taps send out ripples; dragging leaves a trail of them
 //   ribs   — the ribs around your finger break into stepped tiles; dragging sideways changes their count
@@ -23,7 +23,6 @@ precision highp float;
 uniform vec2 uRes;
 uniform float uTime, uWarp, uBright, uCount, uParam;
 uniform vec3 uCols[${MAX_COLS}];  // sorted dark -> light
-uniform vec3 uAudio;              // bass, mid, high (0..1)
 uniform vec3 uTouch;              // xy = finger in 0..1 uv, z = 0..1 how pressed (rises fast, heals slowly)
 uniform vec3 uRip[${RIPPLES}];     // ripples: xy = uv, z = age in seconds
 #define FIELD ${FIELD.toFixed(2)}
@@ -82,13 +81,13 @@ void main(){
     shade += cos(phase) * packet * fade;
   }
   float t = uTime;
-  float w = uWarp + uAudio.x * 3.;
+  float w = uWarp;
   vec2 q = vec2(fbm(p + vec2(0., t * .12)), fbm(p + vec2(5.2, 1.3) - t * .1));
   vec2 r = vec2(fbm(p + w * q + vec2(1.7, 9.2) + t * .15), fbm(p + w * q + vec2(8.3, 2.8) - t * .13));
   float f = fbm(p + w * r);
   float x = smoothstep(.3, .7, f + (r.x - .5) * .45);
   vec3 col = palette(x);
-  col *= .9 + .2 * smoothstep(.3, .8, f) + uAudio.z * .35 + shade * .16;
+  col *= .9 + .2 * smoothstep(.3, .8, f) + shade * .16;
   col += pow(max(shade, 0.), 3.) * .12;   // glint on crest tops
   gl_FragColor = vec4(finish(col, .18, .03), 1.);
 }`,
@@ -109,7 +108,7 @@ void main(){
   float shift = (hash(vec2(row, 3.1)) - .5) * 1.6 * near;
   float pitch = 1. + (hash(vec2(row, 7.7)) - .5) * 1.6 * near;
   float x = ((uv.x - uTouch.x) * pitch + uTouch.x) * n + shift
-          + sin(uv.y * 2.4 + t) * (.1 + uAudio.x * .5);
+          + sin(uv.y * 2.4 + t) * .1;
   float id = floor(x);
   float u = fract(x);
   float base = .5 + .3 * sin(t * .5 + id * .45 + uv.y * .8);  // where this rib sits in the palette
@@ -120,7 +119,6 @@ void main(){
   float edge = .5 - abs(fract(uv.y * rows) - .5);   // 0 at a tile's top/bottom edge
   float seam = near * (1. - smoothstep(0., .012, edge));
   col *= 1. - seam * .25;                        // hairline between tiles
-  col *= 1. + uAudio.z * .2;
   gl_FragColor = vec4(finish(col, .12, .035), 1.);
 }`,
 
@@ -139,8 +137,7 @@ void main(){
   for (int L = 0; L < 2; L++) {
     float fl = float(L);
     float wave = .5 + .5 * sin(s * 5. - t * 1.2 + fl * 1.9);
-    float level = fl < .5 ? uAudio.y : uAudio.x;
-    float h = (.04 + .22 * env * wave) * (1. + level * 1.3);
+    float h = .04 + .22 * env * wave;
     float cy = (fl < .5 ? .6 : .4) + .1 * sin(s * 3. + t * .6 + fl * 2.2);
     float w = .32 * (.25 + .75 * env);
     vec2 d = vec2(u / w, (uv.y - cy) / h);
@@ -163,7 +160,6 @@ void main(){
   const ripples = Array.from({ length: RIPPLES }, () => ({ x: 0, y: 0, age: 99 }));
   const lastRipple = { x: 0, y: 0 };
   let ribExtra = 0; // ribs added/removed by dragging sideways
-  const audio = { on: false, ctx: null, analyser: null, stream: null, data: null, lv: [0, 0, 0] };
 
   function compile(type, src) {
     const s = gl.createShader(type);
@@ -183,7 +179,7 @@ void main(){
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     const U = {};
-    for (const n of ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uParam', 'uCols', 'uAudio', 'uTouch', 'uRip']) {
+    for (const n of ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uParam', 'uCols', 'uTouch', 'uRip']) {
       U[n] = gl.getUniformLocation(prog, n);
     }
     return (programs[name] = { prog, U });
@@ -269,38 +265,6 @@ void main(){
     canvas.addEventListener('pointercancel', lift);
   }
 
-  // ---- sound -------------------------------------------------------------------
-  async function toggleMic() {
-    if (audio.on) {
-      audio.stream.getTracks().forEach((t) => t.stop());
-      audio.ctx.close();
-      Object.assign(audio, { on: false, ctx: null, analyser: null, stream: null });
-      return false;
-    }
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error('insecure');
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 512;
-    analyser.smoothingTimeConstant = 0.7;
-    ctx.createMediaStreamSource(stream).connect(analyser);
-    Object.assign(audio, { on: true, ctx, analyser, stream, data: new Uint8Array(analyser.frequencyBinCount) });
-    return true;
-  }
-
-  function readAudio() {
-    const lv = audio.lv;
-    if (!audio.on) { for (let i = 0; i < 3; i++) lv[i] *= 0.9; return lv; }
-    audio.analyser.getByteFrequencyData(audio.data);
-    const band = (a, b) => { let s = 0; for (let i = a; i < b; i++) s += audio.data[i]; return s / ((b - a) * 255); };
-    const raw = [band(1, 6), band(6, 40), band(40, 120)];
-    for (let i = 0; i < 3; i++) {
-      const v = Math.min(1, Math.max(0, (raw[i] - 0.08) * 1.6));
-      lv[i] += (v - lv[i]) * (v > lv[i] ? 0.5 : 0.12); // fast attack, slow release
-    }
-    return lv;
-  }
-
   // ---- loop --------------------------------------------------------------------
   function frame(now) {
     if (!running) return;
@@ -310,8 +274,7 @@ void main(){
     cur.speed += (style.speed - cur.speed) * ease;
     cur.warp += (style.warp - cur.warp) * ease;
     cur.bright += (style.bright - cur.bright) * ease;
-    const lv = readAudio();
-    time += dt * cur.speed * (1 + lv[1] * 2.5);
+    time += dt * cur.speed;
     // Pressing takes hold quickly; letting go heals over ~2s.
     touch.z += ((touch.down ? 1 : 0) - touch.z) * Math.min(1, dt * (touch.down ? 6 : 0.9));
 
@@ -328,7 +291,6 @@ void main(){
     gl.uniform1f(U.uCount, count);
     gl.uniform1f(U.uParam, ribExtra);
     gl.uniform3fv(U.uCols, cols);
-    gl.uniform3f(U.uAudio, lv[0], lv[1], lv[2]);
     gl.uniform3f(U.uTouch, touch.x, touch.y, touch.z);
     gl.uniform3fv(U.uRip, rip);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -345,10 +307,9 @@ void main(){
   function stop() {
     running = false;
     cancelAnimationFrame(raf);
-    if (audio.on) toggleMic().then(() => document.querySelector('#micBtn')?.classList.remove('on'));
   }
 
   const snapshot = () => new Promise((res) => (canvas ? canvas.toBlob(res, 'image/png') : res(null)));
 
-  return { init, start, stop, setPalette, setStyle, toggleMic, snapshot, styles: Object.keys(STYLES) };
+  return { init, start, stop, setPalette, setStyle, snapshot, styles: Object.keys(STYLES) };
 })();
