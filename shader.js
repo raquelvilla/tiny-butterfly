@@ -12,7 +12,8 @@ const Visual = (() => {
   const FIELD = 2.2; // noise field units across the screen height
   const MAX_COLS = 6;
   const TRAIL_SCALE = 0.5; // trail buffer resolution relative to the canvas
-  const BRUSH = 0.038;     // trail thickness, in screen heights
+  const BRUSH = 0.038;     // trail thickness, in screen heights (a stroke swells from ~0.35x to ~1.6x)
+  const SWELL = 0.7;       // stroke length (screen heights) over which the brush reaches full width
   const STRIKES = 3;        // lightning strikes alive at once (each lingers ~0.4s)
   const STRIKE_EVERY = 140; // ms between strikes while held
   const SEG_PER = 56;       // traced line segments per strike
@@ -228,11 +229,39 @@ void main(){
     // how much cloud lies between each pixel and the sun. The sun sits where your finger last was.
     clouds: `
 uniform vec2 uLight;   // sun position, uv
+// Cellular (Worley) noise: distance to the nearest of a grid of slowly churning points.
+float worley(vec2 p, float t){
+  vec2 i = floor(p), f = fract(p);
+  float d = 1.5;
+  for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++) {
+      vec2 g = vec2(float(x), float(y));
+      vec2 o = vec2(hash(i + g), hash(i + g + 17.3));
+      o = .5 + .4 * sin(t * .5 + 6.2832 * o);
+      d = min(d, length(g + o - f));
+    }
+  return d;
+}
+// Cauliflower billows: inverted cellular noise at three sizes, so domes are covered in puffs.
+float billow(vec2 p, float t){
+  return (1. - worley(p, t)) * .55 + (1. - worley(p * 2.1 + 3.7, t)) * .3 + (1. - worley(p * 4.4 - 1.9, t)) * .15;
+}
+// Cumulus: a broad noise decides where the masses are, the billows make them puffy, and fine
+// detail (fewer octaves near the sun) erodes the edges. PUFF keeps the last billow value, so the
+// caller can shade each puff (bright rounded centres, darker creases).
+float PUFF;
 float density(vec2 q, float t, float oct){
-  float f = fbm(q + vec2(t * .6, t * .1), oct);
-  float g = fbm(q * 2.3 - vec2(t * .3, 0.), max(oct - 2., 1.));
-  float e = noise(q * 9. + vec2(t, 0.));                       // fine erosion at the edges
-  return smoothstep(.48, .62, f * .75 + g * .35 - (e - .5) * .06);
+  vec2 m = q + vec2(t * .6, t * .1);
+  float base = fbm(m * .5, 3.);
+  float puff = billow(m * .75, t);
+  PUFF = puff;
+  float det = fbm(m * 3.5 - vec2(t * .3, 0.), max(oct - 3., 1.));
+  return smoothstep(.615, .655, base * .6 + puff * .6 + (det - .5) * .14);   // crisp sunlit edges
+}
+// The same masses without the billows: cheap enough to sample many times for god rays.
+float coverage(vec2 q, float t){
+  vec2 m = q + vec2(t * .6, t * .1);
+  return smoothstep(.615, .655, fbm(m * .5, 3.) * .6 + .33);
 }
 // Filmic tone curve (ACES approximation): rolls highlights off like a camera instead of clipping.
 vec3 filmic(vec3 x){
@@ -251,26 +280,28 @@ void main(){
   vec2 toSun = toL / max(dist, 1e-4);
 
   vec3 sky = mix(palette(.45), palette(.12), uv.y);
-  vec3 col = mix(sky, vec3(dot(sky, vec3(.3, .59, .11))), .3) * .8;   // a little desaturated, like a photo
+  vec3 col = mix(sky, vec3(dot(sky, vec3(.3, .59, .11))), .12) * .68;  // deep, slightly desaturated sky
   float sun = exp(-dist * dist * 16.);
   vec3 sunCol = mix(palette(1.), vec3(1., .96, .88), .55);
   col += sunCol * (sun * .6 + exp(-dist * 3.6) * .3);         // warm halo
-  vec3 litCol = mix(palette(.85), vec3(1.), .55);
-  vec3 shadowCol = mix(palette(.25), litCol, .3) * .75;
+  vec3 litCol = mix(palette(.85), vec3(1.), .7);
+  vec3 shadowCol = mix(palette(.3), litCol, .5) * .8;
   float cover = 0.;
   for (int L = 0; L < 2; L++) {
     float fl = float(L);
-    float sc = mix(2.6, 3.8, fl);
+    float sc = mix(2., 3., fl);
     vec2 q = p * sc + vec2(fl * 7.3, fl * 3.1);
     float tt = t * (1. + fl * .6);
     float d = density(q, tt, oct);
     if (d < .001) continue;
+    float pf = PUFF;
     float acc = 0.;
     float stepLen = sc * .035 * calm;            // shadow steps fade out at the sun
-    for (int i = 1; i <= 4; i++) acc += density(q + toSun * stepLen * float(i), tt, oct);
-    float lit = exp(-acc * 1.05);
+    for (int i = 1; i <= 3; i++) acc += density(q + toSun * stepLen * float(i) * 1.3, tt, oct) * 1.3;
+    float lit = exp(-acc * .7);
     float rim = (1. - d) * lit;
-    vec3 c = mix(shadowCol, litCol, lit) + palette(1.) * rim * sun * .8 + rim * .06;
+    vec3 c = mix(shadowCol, litCol, lit) * (.72 + .5 * smoothstep(.35, .85, pf))   // puffs: bright domes, dark creases
+           + palette(1.) * rim * sun * .8 + rim * .06;
     float alpha = d * mix(.85, .97, fl);
     col = mix(col, c, alpha);
     cover = max(cover, alpha);
@@ -282,7 +313,7 @@ void main(){
   float jitter = hash(gl_FragCoord.xy + fract(t) * 37.);
   for (int i = 0; i < 24; i++) {
     vec2 sp = p + toL * (float(i) + jitter) / 24.;
-    open += 1. - density(sp * 3.8 + vec2(7.3, 3.1), t * 1.6, 3.);
+    open += 1. - coverage(sp * 3. + vec2(7.3, 3.1), t * 1.6);
   }
   open /= 24.;
   float rays = pow(open, 3.) * exp(-dist * 1.6);
@@ -323,7 +354,7 @@ void main(){
     vec2 d = p - S.xy * asp;
     float r = length(d);
     // each piece is a little white-hot heart, rocking gently
-    float size = .03 * (.55 + .45 * S.z);
+    float size = .018 * (.55 + .45 * S.z);
     float a = .25 * sin(uTime * 1.3 + S.w);
     vec2 q = mat2(cos(a), -sin(a), sin(a), cos(a)) * d / size + vec2(0., .5);
     float edge = 1.5 / (size * uRes.y);
@@ -394,7 +425,9 @@ void main(){
   let style = STYLES.liquid;
   const cur = { speed: style.speed, warp: style.warp, bright: style.bright };
   const touch = { x: 0.5, y: 0.5, z: 0, down: 0, id: null };
-  const path = []; // finger points not yet stamped into the trail (capped so a stall can't pile up)
+  const path = []; // finger points [x, y, brush radius] not yet stamped (capped so a stall can't pile up)
+  let stroke = 0;  // how far the current stroke has travelled, in screen heights
+  const brushAt = () => BRUSH * (0.35 + 1.25 * Math.min(1, stroke / SWELL));
   const strikes = Array.from({ length: STRIKES }, () => ({ age: 99 }));
   let strikeAt = 0;
   const segData = new Float32Array(MAXSEG * 2 * 4); // the uSegs texture's contents
@@ -527,6 +560,7 @@ void main(){
   function trailPass(a, b, on, decay) {
     const write = 1 - trail.read;
     const { U } = trailProg;
+    if (on) gl.uniform1f(U.uR, b[2]);
     gl.bindFramebuffer(gl.FRAMEBUFFER, trail.fb[write]);
     gl.bindTexture(gl.TEXTURE_2D, trail.tex[trail.read]);
     gl.uniform2f(U.uA, a[0], a[1]);
@@ -548,14 +582,13 @@ void main(){
     gl.uniform1i(U.uPrev, 0);
     gl.uniform2f(U.uSize, trail.w, trail.h);
     gl.uniform2f(U.uTexel, 1 / trail.w, 1 / trail.h);
-    gl.uniform1f(U.uR, BRUSH);
     gl.uniform1f(U.uPress, 0.9 * Math.sin(clock * 9)); // a pulse, so a held finger keeps making waves
     const pts = path.splice(0);
     trailPass([0, 0], [0, 0], false, 1);
     trailPass([0, 0], [0, 0], false, 2); // a second water step: waves travel twice as far
     if (pts.length === 1 && touch.down) trailPass(pts[0], pts[0], true, 0);
     for (let i = 1; i < pts.length; i++) trailPass(pts[i - 1], pts[i], true, 0);
-    if (touch.down) path.push(pts.length ? pts[pts.length - 1] : [touch.x, touch.y]);
+    if (touch.down) path.push(pts.length ? pts[pts.length - 1] : [touch.x, touch.y, brushAt()]);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
@@ -750,7 +783,8 @@ void main(){
       Object.assign(touch, { x, y, id: e.pointerId });
       touch.down++;
       path.length = 0;
-      path.push([x, y], [x, y]); // a dot even if the finger never moves
+      stroke = 0;
+      path.push([x, y, brushAt()], [x, y, brushAt()]); // a dot even if the finger never moves
       if (style.prog === 'vapour') {
         const k = oldest(ice.filter((q) => !q.auto));
         Object.assign(k, { x, y, age: 0, seed: Math.random() * 50, held: true });
@@ -768,7 +802,8 @@ void main(){
       }
       Object.assign(touch, { x, y });
       ice.forEach((k) => { if (k.held) Object.assign(k, { x, y }); });
-      if (path.length < 48) path.push([x, y]);
+      stroke += len;
+      if (path.length < 48) path.push([x, y, brushAt()]);
     });
     const lift = (e) => {
       if (!touch.down) return;

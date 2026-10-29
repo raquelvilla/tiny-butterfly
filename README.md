@@ -9,13 +9,14 @@ A colour a day, folded into palettes and liquid light.
   tetradic). Tap a colour in a suggestion to swap it. *Keep* saves it, and *Tweak* opens it in the builder.
 - **Visual**: a palette becomes a full-screen shader. Tap ◎ to save a still. Each style answers touch
   in its own way:
-  - **liquid**: smooth domain-warped noise. Your finger draws a thick liquid-chrome trail that bends
+  - **liquid**: smooth domain-warped noise. Your finger draws a liquid-chrome trail (thin at first,
+    swelling as the stroke goes on) that bends
     the colours under it and slowly melts away. The stroke also pushes a simulated water surface, so
     chrome waves spread out from the shape you draw (and keep coming while you hold still).
   - **storm**: fast, finely detailed noise. Hold a finger down and lightning runs along the noise's own
     paths from it, with branches peeling off onto neighbouring veins; it heads the way you drag.
-  - **clouds**: soft volumetric clouds in two drifting layers over a palette sky, self-shadowed with
-    glowing edges. Your finger moves the sun.
+  - **clouds**: billowy cumulus (cellular "cauliflower" noise) in two drifting layers over a palette
+    sky, self-shadowed with crisp sunlit edges and god rays. Your finger moves the sun.
   - **vapour**: little glowing hearts sublimating into fibrous vapour on black, like dry ice, coloured
     like heat through your palette. Tap to drop a heart; drag to carry it and stream its vapour behind.
 
