@@ -2,7 +2,7 @@
    are pale grey pills, things sit centred on huge, almost-squircle white cards on off-white, type is
    a light neutral grotesk (Geist), and the mark is a little butterfly made of dots. The colours keep
    a faint airbrushed volume so they're the only thing with weight on the page. Light by default, like
-   OEM; the ◐ button in the header switches to dark (html[data-theme="dark"]). */
+   OEM; the dotted half-moon button in the header switches to dark (html[data-theme="dark"]). */
 :root {
   --bg: #FAFAFA;
   --surface: #FFFFFF;
@@ -72,8 +72,10 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
   max-width: 560px; margin: 0 auto;
   padding: calc(16px + env(safe-area-inset-top)) 16px 8px;
 }
-.theme-btn { font-size: 16px; transition: transform .4s ease; }
-[data-theme="dark"] .theme-btn { transform: rotate(180deg); }
+.theme-btn { display: grid; place-items: center; padding: 0; }
+.theme-btn svg { width: 22px; height: 22px; fill: var(--ink); transition: transform .5s ease; }
+.theme-btn .off { opacity: .3; }
+[data-theme="dark"] .theme-btn svg { transform: rotate(180deg); }  /* the lit half swings round */
 .mark { margin: 0; line-height: 0; }
 .mark svg { width: 34px; height: auto; fill: var(--ink); }
 .icon-btn {
