@@ -41,6 +41,11 @@ precision highp float;
 uniform sampler2D uPrev;
 uniform vec2 uSize, uTexel, uA, uB;
 uniform float uOn, uR, uDecay, uPress;
+float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float noise(vec2 p){
+  vec2 i = floor(p), f = fract(p), u = f * f * (3. - 2. * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+}
 // R = chrome trail. G, B = water height now and one step ago (stored as h*.5+.5): a classic
 // two-buffer ripple simulation, so waves spread out from wherever the stroke pushes the water.
 void main(){
@@ -57,26 +62,27 @@ void main(){
     h = hn;
   }
   if (uDecay > .5 && uDecay < 1.5) {
-    // Spread: each frame the trail grows a little into its surroundings (like ink spreading), so
-    // older parts of a stroke are wider than where your finger just was.
-    // Strongest of eight neighbours on a small circle: grows round (four axis neighbours grow a diamond).
-    float n4 = 0.;
+    // Spread: each frame the trail diffuses a little into its surroundings (like ink in water), so
+    // older parts of a stroke are wider and softer than where your finger just was. A blur on a
+    // circle grows round, soft-edged shapes; keeping the brighter of it and the old value lets the
+    // trail widen without just dimming.
+    float blur = v * .2;
     for (int i = 0; i < 8; i++) {
-      float a = float(i) * .7854;
-      n4 = max(n4, texture2D(uPrev, uv + vec2(cos(a), sin(a)) * uTexel * .45).r);
+      float a = float(i) * .7854 + .39;
+      blur += texture2D(uPrev, uv + vec2(cos(a), sin(a)) * uTexel * 1.9).r * .1;
     }
-    v = max(v * .4
-      + (texture2D(uPrev, uv + vec2(uTexel.x, 0.)).r + texture2D(uPrev, uv - vec2(uTexel.x, 0.)).r
-       + texture2D(uPrev, uv + vec2(0., uTexel.y)).r + texture2D(uPrev, uv - vec2(0., uTexel.y)).r) * .15,
-      n4 * .985);
-    v = max(v * .985 - .0025, 0.);   // the subtraction makes sure 8-bit values reach zero
+    v = max(v * .97, blur * 1.004);
+    v = max(v * .99 - .002, 0.);     // the subtraction makes sure 8-bit values reach zero
   }
   vec2 asp = vec2(uSize.x / uSize.y, 1.);
   vec2 p = uv * asp, a = uA * asp, b = uB * asp;
   vec2 pa = p - a, ba = b - a;
   float k = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0., 1.);
   float d = length(pa - ba * k);
-  float stamp = uOn * smoothstep(uR, uR * .3, d);
+  // a soft dome with an uneven, wavering edge, so the stroke looks poured rather than drawn with a tube
+  float wob = noise(p * 38.) * .65 + noise(p * 90.) * .35;
+  d *= .75 + .5 * wob;
+  float stamp = uOn * exp(-d * d / (uR * uR) * 3.);
   v = max(v, stamp);
   h = mix(h, uPress, stamp);                      // the stroke pushes the water in a pulse
   gl_FragColor = vec4(v, clamp(h * .5 + .5, 0., 1.), clamp(hp * .5 + .5, 0., 1.), 1.);
@@ -152,11 +158,14 @@ void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 asp = vec2(uRes.x / uRes.y, 1.);
   float h = trail(uv);
-  vec2 o = uTexel * 3.;
-  float hx = trail(uv + vec2(o.x, 0.)) - trail(uv - vec2(o.x, 0.));
-  float hy = trail(uv + vec2(0., o.y)) - trail(uv - vec2(0., o.y));
-  vec3 n = normalize(vec3(-hx, -hy, .14));
-  float body = smoothstep(.02, .14, h);
+  // slope from two scales averaged, so the surface reads as one soft rounded body
+  vec2 o = uTexel * 4., O = uTexel * 10.;
+  float hx = (trail(uv + vec2(o.x, 0.)) - trail(uv - vec2(o.x, 0.))
+            + (trail(uv + vec2(O.x, 0.)) - trail(uv - vec2(O.x, 0.))) * .6) * .6;
+  float hy = (trail(uv + vec2(0., o.y)) - trail(uv - vec2(0., o.y))
+            + (trail(uv + vec2(0., O.y)) - trail(uv - vec2(0., O.y))) * .6) * .6;
+  vec3 n = normalize(vec3(-hx, -hy, .3));
+  float body = smoothstep(.0, .45, h);
 
   // Smooth: three octaves at a broader scale.
   vec2 p = uv * asp * FIELD * .75 + n.xy * .6 * body;
@@ -168,7 +177,7 @@ void main(){
   vec2 slope = vec2(texture2D(uTrail, uv + vec2(w.x, 0.)).g - texture2D(uTrail, uv - vec2(w.x, 0.)).g,
                     texture2D(uTrail, uv + vec2(0., w.y)).g - texture2D(uTrail, uv - vec2(0., w.y)).g) * 7.;
   p += slope * .25;
-  n = normalize(vec3(-hx - slope.x, -hy - slope.y, .14));
+  n = normalize(vec3(-hx - slope.x, -hy - slope.y, .3));
   body = max(body, smoothstep(.04, .35, length(slope)));
 
   float f;
@@ -176,12 +185,12 @@ void main(){
 
   vec3 L = normalize(vec3(-.45, .6, .65));
   float diff = clamp(dot(n, L), 0., 1.);
-  float spec = pow(clamp(dot(reflect(-L, n), vec3(0., 0., 1.)), 0., 1.), 36.);
-  float rim = pow(1. - n.z, 1.6);
+  float spec = pow(clamp(dot(reflect(-L, n), vec3(0., 0., 1.)), 0., 1.), 14.);
+  float rim = pow(1. - n.z, 2.);
   vec3 env = palette(.5 + .5 * n.y);                     // the chrome reflects the palette
   vec3 glass = col * (.6 + .55 * diff) + env * rim * .35;
-  glass = mix(glass, vec3(.04, .035, .05), rim * .6);     // dark outline at the edges
-  glass += spec * 1.1;
+  glass = mix(glass, glass * .55, rim * .5);              // a gentle shade toward the edges, no outline
+  glass += spec * .4;
   col = mix(col, glass, body);
   gl_FragColor = vec4(finish(col, .18, .03), 1.);
 }`,
