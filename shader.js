@@ -237,11 +237,32 @@ void main(){
     // how much cloud lies between each pixel and the sun. The sun sits where your finger last was.
     clouds: `
 uniform vec2 uLight;   // sun position, uv
-float density(vec2 q, float t, float oct){
-  float f = fbm(q + vec2(t * .6, t * .1), oct);
+// Cellular (Worley) noise: distance to the nearest of a grid of slowly churning points.
+float worley(vec2 p, float t){
+  vec2 i = floor(p), f = fract(p);
+  float d = 1.5;
+  for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++) {
+      vec2 g = vec2(float(x), float(y));
+      vec2 o = vec2(hash(i + g), hash(i + g + 17.3));
+      o = .5 + .4 * sin(t * .5 + 6.2832 * o);
+      d = min(d, length(g + o - f));
+    }
+  return d;
+}
+// Photographic cloud density with some cumulus "cauliflower" mixed in: inverted cellular noise
+// rounds the edges into billowing lumps. puffy = 0 swaps the billows for their average (cheap, for
+// the many god-ray samples). PUFF keeps the last billow value so puffs can catch a little light.
+float PUFF;
+float density(vec2 q, float t, float oct, float puffy){
+  vec2 m = q + vec2(t * .6, t * .1);
+  float f = fbm(m, oct);
   float g = fbm(q * 2.3 - vec2(t * .3, 0.), max(oct - 2., 1.));
   float e = noise(q * 9. + vec2(t, 0.));                       // fine erosion at the edges
-  return smoothstep(.48, .62, f * .75 + g * .35 - (e - .5) * .06);
+  float b = .56;
+  if (puffy > .5) b = (1. - worley(m * 1.4, t)) * .65 + (1. - worley(m * 3.1 + 3.7, t)) * .35;
+  PUFF = b;
+  return smoothstep(.555, .695, f * .7 + g * .22 + b * .3 - (e - .5) * .06);
 }
 // Filmic tone curve (ACES approximation): rolls highlights off like a camera instead of clipping.
 vec3 filmic(vec3 x){
@@ -272,14 +293,16 @@ void main(){
     float sc = mix(2.6, 3.8, fl);
     vec2 q = p * sc + vec2(fl * 7.3, fl * 3.1);
     float tt = t * (1. + fl * .6);
-    float d = density(q, tt, oct);
+    float d = density(q, tt, oct, 1.);
     if (d < .001) continue;
+    float pf = PUFF;
     float acc = 0.;
     float stepLen = sc * .035 * calm;            // shadow steps fade out at the sun
-    for (int i = 1; i <= 4; i++) acc += density(q + toSun * stepLen * float(i), tt, oct);
+    for (int i = 1; i <= 4; i++) acc += density(q + toSun * stepLen * float(i), tt, oct, 1.);
     float lit = exp(-acc * 1.05);
     float rim = (1. - d) * lit;
-    vec3 c = mix(shadowCol, litCol, lit) + palette(1.) * rim * sun * .8 + rim * .06;
+    vec3 c = mix(shadowCol, litCol, lit) * (.9 + .22 * smoothstep(.4, .85, pf))   // puffs catch the light
+           + palette(1.) * rim * sun * .8 + rim * .06;
     float alpha = d * mix(.85, .97, fl);
     col = mix(col, c, alpha);
     cover = max(cover, alpha);
@@ -291,7 +314,7 @@ void main(){
   float jitter = hash(gl_FragCoord.xy + fract(t) * 37.);
   for (int i = 0; i < 24; i++) {
     vec2 sp = p + toL * (float(i) + jitter) / 24.;
-    open += 1. - density(sp * 3.8 + vec2(7.3, 3.1), t * 1.6, 3.);
+    open += 1. - density(sp * 3.8 + vec2(7.3, 3.1), t * 1.6, 3., 0.);
   }
   open /= 24.;
   float rays = pow(open, 3.) * exp(-dist * 1.6);
