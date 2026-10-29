@@ -113,13 +113,13 @@ void main(){
     g = max(g - uDt * .05, 0.);                   // the ridge slowly evaporates
     // drips: carried down from the texel above, slowing and thinning as they go
     float above = texture2D(uPrev, uv + vec2(0., uTexel.y * 1.5)).b;
-    b = max(b * .9, above * .992);
-    // only some columns drip, and only from where the ridge is heavy with water below a clear stroke
-    float colId = floor(uv.x / uTexel.x / 3.);
-    float heavy = smoothstep(.55, .9, g) * step(.86, hash(vec2(colId, 3.1)));
+    b = max(b * .85, above * .965);              // short runs that soon stop
+    // only a rare few columns drip, and only just after you draw (while the ridge is fresh and heavy)
+    float colId = floor(uv.x / uTexel.x / 2.);
+    float heavy = smoothstep(.88, .98, g) * step(.965, hash(vec2(colId, 3.1)));
     float clearAbove = 1. - texture2D(uPrev, uv + vec2(0., uTexel.y * 6.)).r;
     b = max(b, heavy * step(.5, clearAbove));
-    v = min(v, 1. - b * .9);                      // a running drip clears a trail behind it
+    v = min(v, 1. - b * .6);                      // a running drip clears a faint trail behind it
   }
   vec2 asp = vec2(uSize.x / uSize.y, 1.);
   vec2 p = uv * asp, a = uA * asp, bb = uB * asp, pa = p - a, ba = bb - a;
@@ -506,7 +506,7 @@ void main(){
   vec2 T = 1. / uRes * 2.;
   vec2 dg = vec2(texture2D(uTrail, uv + vec2(T.x, 0.)).b - texture2D(uTrail, uv - vec2(T.x, 0.)).b,
                  texture2D(uTrail, uv + vec2(0., T.y)).b - texture2D(uTrail, uv - vec2(0., T.y)).b);
-  float drip = smoothstep(.35, .8, F.b);
+  float drip = smoothstep(.5, .9, F.b) * .7;
   float wet = max(max(a.z, b.z * .8), max(e.z, drip));
   vec2 bend = a.xy / 26. + b.xy / 52. * .7 + e.xy / 95. * .7 - dg * .02;
   float fog = F.r * (1. - max(max(a.w, b.w * .7), wet));
