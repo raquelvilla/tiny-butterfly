@@ -2,7 +2,8 @@
 // Each style is its own fragment shader sharing a common header, and each answers touch its own way:
 //   liquid — your finger draws a liquid-chrome trail (a feedback buffer) that refracts the colours
 //            underneath and melts away
-//   storm  — holding a finger down throws forked lightning and sparks out of it
+//            (taps and drawing also send ripples through the colours)
+//   storm  — holding a finger down strikes forked lightning that grows, lingers and fades
 //   ribs   — the ribs around your finger break into stepped tiles; dragging sideways changes their count
 //   pills  — (no touch yet)
 const Visual = (() => {
@@ -10,6 +11,10 @@ const Visual = (() => {
   const MAX_COLS = 6;
   const TRAIL_SCALE = 0.5; // trail buffer resolution relative to the canvas
   const BRUSH = 0.05;      // trail thickness, in screen heights
+  const RIPPLES = 8;
+  const RIPPLE_GAP = 0.14; // uv distance a drawing finger travels between ripples
+  const STRIKES = 4;       // lightning strikes alive at once (each lingers ~0.7s)
+  const STRIKE_EVERY = 90; // ms between strikes while held
 
   const STYLES = {
     liquid: { prog: 'liquid', speed: 0.3, warp: 2.6, bright: 1.0 },
@@ -99,9 +104,11 @@ vec3 finish(vec3 col, float vignette, float grain){
   const BODIES = {
     // Domain-warped fbm under a liquid-chrome trail. The trail's slope acts as a surface normal:
     // it bends the colours beneath (refraction), darkens at the rim and catches a highlight.
+    // Taps (and every so often while drawing) also send water ripples through the colours.
     liquid: `
 uniform sampler2D uTrail;
 uniform vec2 uTexel;
+uniform vec3 uRip[${RIPPLES}];   // xy = uv, z = age in seconds
 float trail(vec2 uv){ return texture2D(uTrail, uv).r; }
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
@@ -115,7 +122,27 @@ void main(){
 
   // Smooth: three octaves at a broader scale.
   vec2 p = uv * asp * FIELD * .75 + n.xy * .6 * body;
+
+  // Ripples: a packet of concentric crests travels outward and fades, bending the colour slightly
+  // and catching light on each crest so it reads as a ring.
+  float shade = 0.;
+  for (int i = 0; i < ${RIPPLES}; i++) {
+    float a = uRip[i].z;
+    if (a > 3.) continue;
+    vec2 d = (uv - uRip[i].xy) * asp;
+    float r = length(d);
+    float ahead = r - a * .3;                     // > 0 outside the leading edge
+    float e = ahead + .06;
+    float packet = exp(-pow(max(e, 0.) * 22., 2.) - pow(min(e, 0.) * 9., 2.));
+    float fade = exp(-a * 1.1) * smoothstep(0., .04, r);
+    float phase = ahead * 75.;
+    p += d / max(r, 1e-3) * sin(phase) * packet * fade * .03;
+    shade += cos(phase) * packet * fade;
+  }
+
   vec3 col = field(p, 3.);
+  col *= 1. + shade * .14;
+  col += pow(max(shade, 0.), 3.) * .1;
 
   vec3 L = normalize(vec3(-.45, .6, .65));
   float diff = clamp(dot(n, L), 0., 1.);
@@ -129,53 +156,64 @@ void main(){
   gl_FragColor = vec4(finish(col, .18, .03), 1.);
 }`,
 
-    // Fine, detailed warped noise. Holding a finger down throws forked lightning out of it:
-    // jagged bolts (layered 1-D noise across each one) re-struck every few frames, sparks, and a flash.
+    // Fine, detailed warped noise. Holding a finger down strikes lightning: each strike's bolts grow
+    // out from the finger (leaning the way you drag), fork, then linger and fade like an afterimage,
+    // shedding embers. Bolts are thin white cores in a glow tinted by the palette's lightest colour.
     storm: `
-uniform vec4 uBolt;   // xy = finger uv, z = strength (snaps on, dies fast), w = strike seed
-float bolt(vec2 p, vec2 o, float ang, float len, float seed){
+uniform vec4 uStrikes[${STRIKES}];  // xy = origin uv, z = seed, w = age in seconds
+uniform vec3 uDir;                  // xy = drag direction, z = 0..1 how much you're moving
+// (core, glow) of one bolt that has grown to 'reach' (0..1) of its length
+vec2 bolt(vec2 p, vec2 o, float ang, float len, float reach, float seed){
   vec2 dir = vec2(cos(ang), sin(ang)), side = vec2(-dir.y, dir.x);
   vec2 d = p - o;
   float s = dot(d, dir);
-  if (s < 0. || s > len) return 0.;
-  float jag = (noise(vec2(s * 7., seed)) - .5) * .22
-            + (noise(vec2(s * 23., seed + 7.)) - .5) * .08
-            + (noise(vec2(s * 70., seed + 3.)) - .5) * .025;
-  float dd = abs(dot(d, side) - jag * smoothstep(0., .1, s));
-  float fade = 1. - s / len;
-  return (exp(-dd * 380.) * 1.6 + exp(-dd * 60.) * .45) * fade;
+  float end = len * reach;
+  if (s < 0. || s > end) return vec2(0.);
+  float jag = (noise(vec2(s * 6., seed)) - .5) * .18
+            + (noise(vec2(s * 21., seed + 7.)) - .5) * .06
+            + (noise(vec2(s * 64., seed + 3.)) - .5) * .018;
+  float dd = abs(dot(d, side) - jag * smoothstep(0., .08, s));
+  float taper = 1. - s / len;
+  float tip = smoothstep(end - .03, end, s) * (1. - reach);   // bright leading tip while growing
+  return vec2(exp(-dd * 1100.) * (taper + tip * 2.), exp(-dd * 140.) * taper);
 }
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 asp = vec2(uRes.x / uRes.y, 1.);
   vec3 col = field(uv * asp * FIELD * 1.35, 7.);
-
-  float k = uBolt.z;
-  if (k > .001) {
-    vec2 p = uv * asp, o = uBolt.xy * asp;
-    float seed = uBolt.w;
-    float e = 0.;
-    for (int i = 0; i < 6; i++) {
+  vec2 p = uv * asp;
+  vec2 light = vec2(0.);
+  float embers = 0., flash = 0.;
+  float moveAng = atan(uDir.y, uDir.x + 1e-5);
+  for (int k = 0; k < ${STRIKES}; k++) {
+    vec4 S = uStrikes[k];
+    float a = S.w;
+    if (a > .7) continue;
+    vec2 o = S.xy * asp;
+    float seed = S.z;
+    float reach = smoothstep(0., .1, a);
+    float life = 1. - smoothstep(.06, .7, a);
+    for (int i = 0; i < 4; i++) {
       float fi = float(i);
-      float ang = hash(vec2(fi, seed)) * 6.2832;
-      float len = .22 + .4 * hash(vec2(seed, fi + 4.));
-      e += bolt(p, o, ang, len, seed + fi * 13.);
-      // a fork leaving each bolt part-way along
-      vec2 fo = o + vec2(cos(ang), sin(ang)) * len * .45;
-      e += .7 * bolt(p, fo, ang + (hash(vec2(fi, seed + 2.)) - .5) * 1.6, len * .45, seed + fi * 29.);
+      float rnd = hash(vec2(fi, seed));
+      float ang = mix(rnd * 6.2832, moveAng + (rnd - .5) * 1.4, uDir.z);
+      float len = .18 + .32 * hash(vec2(seed, fi + 4.));
+      light += bolt(p, o, ang, len, reach, seed + fi * 13.) * life;
+      vec2 fo = o + vec2(cos(ang), sin(ang)) * len * .4;
+      float fang = ang + (hash(vec2(fi, seed + 2.)) - .5) * 1.4;
+      light += .6 * bolt(p, fo, fang, len * .5, smoothstep(.35, 1., reach), seed + fi * 29.) * life;
     }
-    float sparks = 0.;
-    for (int i = 0; i < 14; i++) {
+    for (int i = 0; i < 8; i++) {
       float fi = float(i);
-      vec2 sp = o + (vec2(hash(vec2(fi, seed + 5.)), hash(vec2(seed + 9., fi))) - .5) * .5;
-      sparks += exp(-length(p - sp) * 260.) * step(.4, hash(vec2(fi * 3., seed)));
+      float ea = hash(vec2(fi, seed + 5.)) * 6.2832;
+      vec2 ep = o + vec2(cos(ea), sin(ea)) * (.03 + a * (.2 + .3 * hash(vec2(seed + 9., fi))));
+      embers += exp(-length(p - ep) * 420.) * life;
     }
-    float dist = length(p - o);
-    vec3 volt = mix(vec3(1.), palette(1.), .3);
-    float flicker = .7 + .3 * hash(vec2(seed, 1.7));
-    col += volt * (e + sparks * 1.4) * k * flicker;
-    col += volt * exp(-dist * dist * 9.) * .35 * k * flicker;   // flash around the finger
+    flash += exp(-dot(p - o, p - o) * 30.) * (1. - smoothstep(0., .12, a));
   }
+  vec3 glow = palette(1.) * 1.25 + .08;
+  col += glow * (light.y * .5 + embers * 1.2 + flash * .16);
+  col += mix(glow, vec3(1.), .75) * light.x;
   gl_FragColor = vec4(finish(col, .22, .025), 1.);
 }`,
 
@@ -247,7 +285,11 @@ void main(){
   const cur = { speed: style.speed, warp: style.warp, bright: style.bright };
   const touch = { x: 0.5, y: 0.5, z: 0, down: 0, id: null };
   const path = []; // finger points not yet stamped into the trail (capped so a stall can't pile up)
-  const strike = { k: 0, seed: 0, at: 0 }; // storm lightning: strength and when it was last re-struck
+  const ripples = Array.from({ length: RIPPLES }, () => ({ x: 0, y: 0, age: 99 }));
+  const lastRipple = { x: 0, y: 0 };
+  const strikes = Array.from({ length: STRIKES }, () => ({ x: 0, y: 0, seed: 0, age: 99 }));
+  let strikeAt = 0;
+  const drag = { x: 1, y: 0, amount: 0 }; // recent drag direction, and how much you're moving
   let ribExtra = 0; // ribs added/removed by dragging sideways
 
   function compile(type, src) {
@@ -274,7 +316,7 @@ void main(){
   function program(name) {
     if (!programs[name]) {
       programs[name] = link(COMMON + BODIES[name],
-        ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uParam', 'uCols', 'uTouch', 'uTrail', 'uTexel', 'uBolt']);
+        ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uParam', 'uCols', 'uTouch', 'uTrail', 'uTexel', 'uRip', 'uStrikes', 'uDir']);
     }
     return programs[name];
   }
@@ -390,6 +432,13 @@ void main(){
     return [(e.clientX - r.left) / r.width, (r.bottom - e.clientY) / r.height];
   }
 
+  const oldest = (list) => list.reduce((a, b) => (a.age > b.age ? a : b));
+
+  function dropRipple(x, y) {
+    Object.assign(oldest(ripples), { x, y, age: 0 });
+    Object.assign(lastRipple, { x, y });
+  }
+
   function bindPointers() {
     canvas.addEventListener('pointerdown', (e) => {
       const [x, y] = toUV(e);
@@ -397,13 +446,21 @@ void main(){
       touch.down++;
       path.length = 0;
       path.push([x, y], [x, y]); // a dot even if the finger never moves
+      if (style.prog === 'liquid') dropRipple(x, y);
       try { canvas.setPointerCapture(e.pointerId); } catch {}
     });
     canvas.addEventListener('pointermove', (e) => {
       if (!touch.down || e.pointerId !== touch.id) return;
       const [x, y] = toUV(e);
       if (style.prog === 'ribs') ribExtra = Math.max(-8, Math.min(26, ribExtra + (x - touch.x) * 30));
+      const dx = (x - touch.x) * canvas.width / canvas.height, dy = y - touch.y, len = Math.hypot(dx, dy);
+      if (len > 0.002) {
+        drag.x += (dx / len - drag.x) * 0.3;
+        drag.y += (dy / len - drag.y) * 0.3;
+        drag.amount = Math.min(1.5, drag.amount + len * 25);
+      }
       Object.assign(touch, { x, y });
+      if (style.prog === 'liquid' && Math.hypot(x - lastRipple.x, y - lastRipple.y) > RIPPLE_GAP) dropRipple(x, y);
       if (path.length < 48) path.push([x, y]);
     });
     const lift = (e) => {
@@ -427,9 +484,15 @@ void main(){
     time += dt * cur.speed;
     // Pressing takes hold quickly; letting go heals over ~2s.
     touch.z += ((touch.down ? 1 : 0) - touch.z) * Math.min(1, dt * (touch.down ? 6 : 0.9));
-    // Lightning snaps on, re-strikes every ~70ms while held, and dies within a few frames of lifting.
-    strike.k = touch.down ? 1 : strike.k * Math.pow(0.002, dt);
-    if (touch.down && now - strike.at > 70) { strike.at = now; strike.seed = Math.random() * 100; }
+    drag.amount *= Math.pow(0.05, dt);
+    if (touch.down && now - strikeAt > STRIKE_EVERY) {
+      strikeAt = now;
+      Object.assign(oldest(strikes), { x: touch.x, y: touch.y, seed: Math.random() * 100, age: 0 });
+    }
+    const rip = new Float32Array(RIPPLES * 3);
+    ripples.forEach((r, i) => { r.age = Math.min(99, r.age + dt); rip.set([r.x, r.y, r.age], i * 3); });
+    const stk = new Float32Array(STRIKES * 4);
+    strikes.forEach((k, i) => { k.age = Math.min(99, k.age + dt); stk.set([k.x, k.y, k.seed, k.age], i * 4); });
 
     resize();
     const liquid = style.prog === 'liquid';
@@ -446,7 +509,9 @@ void main(){
     gl.uniform1f(U.uParam, ribExtra);
     gl.uniform3fv(U.uCols, cols);
     gl.uniform3f(U.uTouch, touch.x, touch.y, touch.z);
-    gl.uniform4f(U.uBolt, touch.x, touch.y, strike.k, strike.seed);
+    gl.uniform3fv(U.uRip, rip);
+    gl.uniform4fv(U.uStrikes, stk);
+    gl.uniform3f(U.uDir, drag.x, drag.y, Math.min(1, drag.amount));
     if (liquid) {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, trail.tex[trail.read]);

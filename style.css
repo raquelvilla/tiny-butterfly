@@ -70,10 +70,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   padding: calc(16px + env(safe-area-inset-top)) 16px 8px;
 }
 .top h1 { font-size: 24px; font-weight: 700; line-height: 1; letter-spacing: -.02em; margin: 0; }
-.top h1 em {
-  font-style: normal; color: var(--accent); transition: color .5s;
-  -webkit-text-stroke: 1px var(--ink); paint-order: stroke fill;
-}
+.top h1 em { font-style: normal; }
 .icon-btn {
   width: 42px; height: 42px; border-radius: 50%; cursor: pointer; font-size: 20px; line-height: 1;
   border: var(--stroke) solid var(--ink); background: var(--chrome); color: var(--chrome-ink);
@@ -92,22 +89,13 @@ h2 { font-size: 22px; font-weight: 700; line-height: 1.1; letter-spacing: -.01em
   box-shadow: none;
   z-index: 10;
 }
-.tabs::before, .tabs::after {   /* pins on either end, like the poster's connectors */
-  content: ''; position: absolute; top: 50%; width: 14px; height: 8px; margin-top: -4px;
-  background: var(--ink); border-radius: 4px;
-}
-.tabs::before { left: -12px; }
-.tabs::after { right: -12px; }
 .tabs button {
   border: var(--stroke) solid transparent; background: transparent; border-radius: 999px;
   padding: 9px 16px; cursor: pointer; font-size: 16px; font-weight: 600; color: #4A4650;
   display: flex; align-items: center; gap: 7px;
 }
 .tabs .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .4; }
-.tabs button[aria-current="page"] {
-  color: var(--accent-ink); background-color: var(--accent);
-  border-color: #16141A;
-}
+.tabs button[aria-current="page"] { color: #F4F2EE; background-color: #16141A; border-color: #16141A; }
 .tabs button[aria-current="page"] .dot { background: currentColor; opacity: 1; }
 
 /* ---- buttons & fields ---- */
