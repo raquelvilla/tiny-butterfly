@@ -10,7 +10,7 @@
   --accent: #E4572E;
   --accent-ink: #FFFFFF;
 
-  --stroke: 2.5px;
+  --stroke: 1.5px;
   --radius: 22px;
   --display: 'Space Grotesk', 'Helvetica Neue', Arial, sans-serif;
   --mono: 'DM Mono', ui-monospace, Menlo, monospace;
@@ -136,17 +136,17 @@ h2 { font-size: 22px; font-weight: 700; line-height: 1.1; letter-spacing: -.01em
   border: 0; padding: 0; background: none; cursor: pointer;
 }
 .hex-wrap input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
-.hex-wrap input[type="color"]::-webkit-color-swatch { border: 2px solid var(--ink); border-radius: 10px; }
+.hex-wrap input[type="color"]::-webkit-color-swatch { border: 1.5px solid var(--ink); border-radius: 10px; }
 .hint { font-size: 13px; color: var(--muted); min-height: 1em; margin: 0 0 12px; }
 
 /* ---- big swatch inside a chrome frame with pins ---- */
 .frame {
-  position: relative; margin: 14px 0 26px; padding: 9px;
-  background: var(--chrome); border: var(--stroke) solid #16141A; border-radius: 34px;
+  position: relative; margin: 14px 0 26px; padding: 5px;
+  background: var(--chrome); border: var(--stroke) solid #16141A; border-radius: 30px;
   box-shadow: none;
 }
 .frame::before, .frame::after {
-  content: ''; position: absolute; left: 50%; width: 9px; height: 18px; margin-left: -4.5px;
+  content: ''; position: absolute; left: 50%; width: 6px; height: 14px; margin-left: -3px;
   background: var(--ink); border-radius: 5px;
 }
 .frame::before { top: -14px; }
@@ -164,7 +164,7 @@ h2 { font-size: 22px; font-weight: 700; line-height: 1.1; letter-spacing: -.01em
 .swatch-hex {
   position: absolute; bottom: 14px; right: 14px; padding: 6px 12px;
   font: 500 15px var(--mono); letter-spacing: .08em; color: var(--chrome-ink);
-  background: var(--chrome); border: 2px solid #16141A; border-radius: 999px;
+  background: var(--chrome); border: 1.5px solid #16141A; border-radius: 999px;
   box-shadow: none;
 }
 .swatch-hex:empty { display: none; }
@@ -197,12 +197,12 @@ h2 { font-size: 22px; font-weight: 700; line-height: 1.1; letter-spacing: -.01em
 }
 .day:hover { transform: translateY(-2px); }
 .day.has {
-  border: 2px solid #16141A; background-image: var(--tube); font-weight: 600;
+  border: 1.5px solid #16141A; background-image: var(--tube); font-weight: 600;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 6px 12px -6px rgba(0, 0, 0, .5);
 }
 .day.future { opacity: .35; cursor: default; }
 .day.future:hover { transform: none; }
-.day.editing { outline: 3px solid var(--ink); outline-offset: 3px; }
+.day.editing { outline: 2px solid var(--ink); outline-offset: 3px; }
 
 /* ---- palettes ---- */
 .pal-actions { margin: 10px 0 22px; }
@@ -219,25 +219,25 @@ h2 { font-size: 22px; font-weight: 700; line-height: 1.1; letter-spacing: -.01em
 }
 .strip::after { content: ''; position: absolute; inset: 0; background: var(--tube-x); pointer-events: none; }
 .strip > span, .strip > button { flex: 1; transition: flex .3s ease; }
-.strip > * + * { border-left: 2px solid #16141A; }
+.strip > * + * { border-left: 1.5px solid #16141A; }
 .strip-preview { margin-bottom: 8px; }
 .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 9px; margin: 6px 0 16px; }
 .pick {
-  aspect-ratio: 1; border: 2px solid #16141A; border-radius: 14px; cursor: pointer; position: relative;
+  aspect-ratio: 1; border: 1.5px solid #16141A; border-radius: 14px; cursor: pointer; position: relative;
   padding: 0; background-image: var(--tube);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 6px 12px -6px rgba(0, 0, 0, .5);
 }
-.pick.on { outline: 3px solid var(--ink); outline-offset: 3px; }
+.pick.on { outline: 2px solid var(--ink); outline-offset: 3px; }
 .pick .n {
   position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; border-radius: 50%;
-  background: var(--chrome); color: var(--chrome-ink); border: 2px solid #16141A;
+  background: var(--chrome); color: var(--chrome-ink); border: 1.5px solid #16141A;
   display: grid; place-items: center; font-size: 12px; font-weight: 700;
 }
 
 .suggestion { margin-bottom: 20px; }
 .suggestion .rule { font-size: 15px; font-weight: 600; color: var(--muted); margin: 0 0 8px; }
 .suggestion .strip button { border: 0; cursor: pointer; }
-.suggestion .strip button + button { border-left: 2px solid #16141A; }
+.suggestion .strip button + button { border-left: 1.5px solid #16141A; }
 .suggestion .strip button:hover { flex: 1.4; }
 .suggestion .row { margin-top: 10px; }
 .suggestion .row button { padding: 8px 16px; font-size: 15px; }
@@ -248,7 +248,7 @@ h2 { font-size: 22px; font-weight: 700; line-height: 1.1; letter-spacing: -.01em
 .pal-card .name { font-size: 18px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pal-card .tag { font-size: 13px; color: var(--muted); }
 .pal-card .mini {
-  border: 2px solid transparent; background: none; color: var(--muted); cursor: pointer;
+  border: 1.5px solid transparent; background: none; color: var(--muted); cursor: pointer;
   padding: 5px 9px; border-radius: 999px; font-size: 14px; font-weight: 600;
 }
 .pal-card .mini:hover { border-color: var(--ink); color: var(--ink); }
@@ -271,11 +271,11 @@ body.visual-on .top, body.visual-on .tabs { display: none; }
 }
 .vis-ui.hide { opacity: 0; transform: translate(-50%, 12px); pointer-events: none; }
 .vis-ui select {
-  background: #FBFAF7; border: 2px solid #16141A; border-radius: 999px; padding: 8px 14px;
+  background: #FBFAF7; border: 1.5px solid #16141A; border-radius: 999px; padding: 8px 14px;
   color: #16141A; max-width: 180px; font-weight: 700; box-shadow: inset 0 2px 4px rgba(0, 0, 0, .1);
 }
 .seg {
-  display: flex; background: rgba(22, 20, 26, .08); border: 2px solid #16141A; border-radius: 999px; padding: 3px;
+  display: flex; background: rgba(22, 20, 26, .08); border: 1.5px solid #16141A; border-radius: 999px; padding: 3px;
   max-width: 100%; overflow-x: auto; scrollbar-width: none; box-shadow: inset 0 2px 4px rgba(0, 0, 0, .12);
 }
 .seg::-webkit-scrollbar { display: none; }
@@ -289,7 +289,7 @@ body.visual-on .top, body.visual-on .tabs { display: none; }
 .vis-btns { display: flex; gap: 6px; }
 .round {
   width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 16px;
-  border: 2px solid #16141A; background: #FBFAF7; color: #16141A;
+  border: 1.5px solid #16141A; background: #FBFAF7; color: #16141A;
   box-shadow: none;
 }
 
