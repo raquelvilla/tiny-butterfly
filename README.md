@@ -13,15 +13,16 @@ A colour a day, folded into palettes and liquid light.
     as it ages (thin at your finger, broad further back) and bends
     the colours under it and slowly melts away. The stroke also pushes a simulated water surface, so
     chrome waves spread out from the shape you draw (and keep coming while you hold still).
-  - **storm**: fast, finely detailed noise. Hold a finger down and lightning runs along the noise's own
+  - **storm**: smooth, silky flowing noise. Hold a finger down and lightning runs along the noise's own
     paths from it, with branches peeling off onto neighbouring veins; it heads the way you drag.
   - **clouds**: soft, photographic volumetric clouds in two drifting layers over a palette sky,
     self-shadowed with glowing edges, a sun with a hot core, and god rays. Your finger moves the sun.
   - **vapour**: little glowing hearts sublimating into fibrous vapour on black, like dry ice, coloured
     like heat through your palette. Tap to drop a heart; drag to carry it and stream its vapour behind.
-  - **threads**: the palette's name in fine glowing outline on black. Drag through it and the letters
-    come apart into a constellation of palette-coloured nodes joined by thin lines, some stretching into
-    vertical strings, then knit back together. Left alone a while, it disturbs itself now and then.
+  - **threads**: a bezier pen. Tap to place points (tap and drag to pull out their handles), drag a
+    point to move it, drag a handle to bend the curve, double-tap a point to remove it. The curve is a
+    fine glowing line in your palette with a light travelling along it; the points and handles fade
+    away after a few seconds so you're left with just the line. Your curve is remembered.
 
 ## Run it
 
@@ -66,6 +67,6 @@ Palettes point at days, so changing a day's colour changes it in every palette t
 | `app.js` | state, Today, diary, palettes, settings |
 | `color.js` | hex parsing, OKLab/OKLCH, harmony suggestions |
 | `shader.js` | WebGL styles and their touch effects |
-| `threads.js` | the threads style's lettering and particles (drawn in 2D, composited by `shader.js`) |
+| `threads.js` | the threads style's bezier pen (drawn in 2D, composited by `shader.js`) |
 | `sw.js`, `manifest.json`, `icons/` | installable / offline |
 | `tools/make_icons.py` | redraws the butterfly icons |

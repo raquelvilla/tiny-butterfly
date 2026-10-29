@@ -26,7 +26,7 @@ const Visual = (() => {
 
   const STYLES = {
     liquid: { prog: 'liquid', speed: 0.3, warp: 2.6, bright: 1.0 },
-    storm: { prog: 'storm', speed: 0.85, warp: 4.6, bright: 1.0 },
+    storm: { prog: 'storm', speed: 0.7, warp: 3.4, bright: 1.0 },
     clouds: { prog: 'clouds', speed: 0.12, warp: 0, bright: 1.0 },
     vapour: { prog: 'vapour', speed: 1, warp: 0, bright: 1.0 },
     threads: { prog: 'threads', speed: 1, warp: 0, bright: 1.0 },
@@ -199,7 +199,7 @@ void main(){
   gl_FragColor = vec4(finish(col, .18, .03), 1.);
 }`,
 
-    // Fine, detailed warped noise that conducts lightning. Bolts are traced in JS along the contour of
+    // Smooth, silky warped noise that conducts lightning. Bolts are traced in JS along the contour of
     // the noise that passes through the finger (see traceStrike) and arrive here as line segments in a
     // small float texture; each one is drawn as a thin white core in a palette-tinted glow, growing
     // out from the finger and fading.
@@ -209,7 +209,7 @@ void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 asp = vec2(uRes.x / uRes.y, 1.);
   float f;
-  vec3 col = field(uv * asp * FIELD * 1.35, 7., f);
+  vec3 col = field(uv * asp * FIELD * 1.35, 4., f);   // few octaves: smooth, silky noise
   vec2 p = uv * asp;
   float core = 0., glow = 0.;
   for (int i = 0; i < ${MAXSEG}; i++) {
@@ -668,9 +668,6 @@ void main(){
     Threads.setColours(cols, count);
   }
 
-  // The words threads writes out (the palette's name).
-  const setWord = (w) => Threads.setWord(w);
-
   function uploadThreads(src) {
     if (!threadTex) {
       threadTex = [0, 1].map(() => {
@@ -849,6 +846,7 @@ void main(){
       touch.down++;
       path.length = 0;
       path.push([x, y, brushAt()], [x, y, brushAt()]); // a dot even if the finger never moves
+      if (style.prog === 'threads') Threads.pointer('down', x, y);
       if (style.prog === 'vapour') {
         const k = oldest(ice.filter((q) => !q.auto));
         Object.assign(k, { x, y, age: 0, seed: Math.random() * 50, held: true });
@@ -865,6 +863,7 @@ void main(){
         drag.amount = Math.min(1.5, drag.amount + len * 25);
       }
       Object.assign(touch, { x, y });
+      if (style.prog === 'threads') Threads.pointer('move', x, y);
       ice.forEach((k) => { if (k.held) Object.assign(k, { x, y }); });
       if (path.length < 48) path.push([x, y, brushAt()]);
     });
@@ -872,6 +871,7 @@ void main(){
       if (!touch.down) return;
       touch.down = Math.max(0, touch.down - 1);
       if (e.pointerId === touch.id) touch.id = null;
+      if (style.prog === 'threads') Threads.pointer('up', ...toUV(e));
       ice.forEach((k) => { k.held = false; });
     };
     canvas.addEventListener('pointerup', lift);
@@ -881,7 +881,7 @@ void main(){
   // ---- loop --------------------------------------------------------------------
   function frame(now) {
     if (!running) return;
-    const dt = Math.min(0.05, (now - last) / 1000 || 0);
+    const dt = Math.max(0, Math.min(0.05, (now - last) / 1000 || 0)); // rAF's first timestamp can predate start()
     last = now;
     const ease = Math.min(1, dt * 2);
     cur.speed += (style.speed - cur.speed) * ease;
@@ -920,7 +920,7 @@ void main(){
     const src = vap ? iceSources() : null;
     if (vap) stepVapour(dt, src);
     const threads = style.prog === 'threads';
-    const drawn = threads && Threads.render(dt, canvas.width, canvas.height, touch.down ? [touch.x, touch.y] : null);
+    const drawn = threads && Threads.render(dt, canvas.width, canvas.height);
 
     const { prog, U } = program(style.prog);
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -975,5 +975,5 @@ void main(){
 
   const snapshot = () => new Promise((res) => (canvas ? canvas.toBlob(res, 'image/png') : res(null)));
 
-  return { init, start, stop, setPalette, setWord, setStyle, snapshot, styles: Object.keys(STYLES) };
+  return { init, start, stop, setPalette, setStyle, snapshot, styles: Object.keys(STYLES) };
 })();
