@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#FBF7F2">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Butterfly">
+  <title>Tiny Butterfly</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>tiny <em>butterfly</em></h1>
+    <button id="settingsBtn" class="icon-btn" aria-label="Settings">⋯</button>
+  </header>
+
+  <main>
+    <!-- TODAY ------------------------------------------------------------ -->
+    <section id="view-today" class="view">
+      <div class="swatch-big" id="bigSwatch">
+        <span class="swatch-day" id="dayLabel">Today</span>
+        <span class="swatch-hex" id="hexEcho"></span>
+        <span class="swatch-empty" id="swatchEmpty">type a colour below</span>
+      </div>
+
+      <form id="dayForm" class="day-form" autocomplete="off">
+        <label class="field">
+          <span>Hex</span>
+          <div class="hex-wrap">
+            <span class="hash">#</span>
+            <input id="hexInput" maxlength="7" placeholder="E4572E" spellcheck="false" autocapitalize="characters" autocorrect="off">
+            <input type="color" id="colorPick" aria-label="Pick a colour" title="Or pick one">
+          </div>
+        </label>
+        <label class="field">
+          <span>Pantone <em>optional</em></span>
+          <input id="pantoneInput" placeholder="17-1462 Flame">
+        </label>
+        <label class="field">
+          <span>A word or note</span>
+          <textarea id="noteInput" rows="2" placeholder="what does today feel like?"></textarea>
+        </label>
+        <p class="hint" id="dayHint" aria-live="polite"></p>
+        <div class="row">
+          <button type="submit" class="primary" id="saveBtn">Keep this colour</button>
+          <button type="button" class="ghost" id="backToday" hidden>Back to today</button>
+          <button type="button" class="ghost danger" id="clearDay" hidden>Remove</button>
+        </div>
+      </form>
+
+      <h2>Your colours</h2>
+      <div id="diary"></div>
+    </section>
+
+    <!-- PALETTES --------------------------------------------------------- -->
+    <section id="view-palettes" class="view" hidden>
+      <div class="row pal-actions">
+        <button class="primary" id="newPalette">New palette</button>
+        <button class="ghost" id="inspireBtn">✦ Inspire me</button>
+      </div>
+
+      <div id="builder" class="panel" hidden>
+        <input id="paletteName" class="name-input" placeholder="name this palette">
+        <div class="strip strip-preview" id="builderPreview"></div>
+        <p class="hint" id="builderHint"></p>
+        <div class="pick-grid" id="builderGrid"></div>
+        <div class="row">
+          <button class="primary" id="builderSave" disabled>Save palette</button>
+          <button class="ghost" id="builderCancel">Cancel</button>
+        </div>
+      </div>
+
+      <div id="inspire" class="panel" hidden>
+        <p class="hint">Colours from your own days that sit well together. Tap a colour to swap it.</p>
+        <div id="suggestions"></div>
+        <div class="row">
+          <button class="ghost" id="reroll">↻ More ideas</button>
+          <button class="ghost" id="inspireClose">Close</button>
+        </div>
+      </div>
+
+      <div id="paletteList"></div>
+    </section>
+
+    <!-- VISUAL ----------------------------------------------------------- -->
+    <section id="view-visual" class="view visual" hidden>
+      <canvas id="glCanvas"></canvas>
+      <p class="vis-fallback" id="visFallback" hidden>This browser can't draw WebGL, so the visuals can't run here.</p>
+      <div class="vis-ui" id="visUi">
+        <select id="visPalette" aria-label="Palette"></select>
+        <div class="seg" id="presets">
+          <button data-preset="calm">calm</button>
+          <button data-preset="liquid">liquid</button>
+          <button data-preset="storm">storm</button>
+        </div>
+        <div class="vis-btns">
+          <button class="round" id="micBtn" aria-label="React to sound" title="React to sound">🎙</button>
+          <button class="round" id="snapBtn" aria-label="Save a still" title="Save a still">◎</button>
+          <button class="round" id="exitVisual" aria-label="Close" title="Close">✕</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs" id="tabs">
+    <button data-view="today" aria-current="page"><span class="dot"></span>Today</button>
+    <button data-view="palettes"><span class="dot"></span>Palettes</button>
+    <button data-view="visual"><span class="dot"></span>Visual</button>
+  </nav>
+
+  <dialog id="settings">
+    <h2>Your data</h2>
+    <p>Everything lives in this browser on this device. Export a backup now and then.</p>
+    <div class="row">
+      <button class="primary" id="exportBtn">Export backup</button>
+      <label class="ghost button-like">Import backup<input type="file" id="importFile" accept="application/json,.json" hidden></label>
+    </div>
+    <form method="dialog"><button class="ghost">Close</button></form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script src="color.js"></script>
+  <script src="shader.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
