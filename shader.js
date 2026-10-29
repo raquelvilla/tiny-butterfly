@@ -5,7 +5,8 @@
 //            (taps and drawing also send ripples through the colours)
 //   storm  — holding a finger down sends lightning through the noise's own veins
 //   ribs   — the ribs around your finger break into stepped tiles; dragging sideways changes their count
-//   pills  — (no touch yet)
+//   pills  — your finger spawns pills that grow into the nearest column, drift and fade
+//   clouds — soft volumetric clouds; your finger moves the sun that lights them
 const Visual = (() => {
   const FIELD = 2.2; // noise field units across the screen height
   const MAX_COLS = 6;
@@ -15,12 +16,15 @@ const Visual = (() => {
   const RIPPLE_GAP = 0.14; // uv distance a drawing finger travels between ripples
   const STRIKES = 4;        // lightning strikes alive at once (each lingers ~0.35s)
   const STRIKE_EVERY = 140; // ms between strikes while held
+  const SPAWNS = 16;        // finger-spawned pills alive at once (each lives ~4s)
+  const SPAWN_GAP = 0.035;  // uv distance a dragging finger travels between pills
 
   const STYLES = {
     liquid: { prog: 'liquid', speed: 0.3, warp: 2.6, bright: 1.0 },
     storm: { prog: 'storm', speed: 0.85, warp: 4.6, bright: 1.0 },
     ribs: { prog: 'ribs', speed: 0.35, warp: 0, bright: 1.0 },
     pills: { prog: 'pills', speed: 0.5, warp: 0, bright: 1.0 },
+    clouds: { prog: 'clouds', speed: 0.12, warp: 0, bright: 1.0 },
   };
 
   const VERT = `attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}`;
@@ -257,8 +261,10 @@ void main(){
   gl_FragColor = vec4(finish(col, .12, .035), 1.);
 }`,
 
-    // Columns of glowing pills on grainy charcoal; heights swell in a slow wave.
+    // Columns of glowing pills on grainy charcoal; heights swell in a slow wave. Pills your finger
+    // spawns snap to the nearest column, grow in with a soft shadow, drift up and shrink away.
     pills: `
+uniform vec4 uPills[${SPAWNS}];   // xy = where spawned (uv), z = age in seconds, w = seed
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
   float asp = uRes.x / uRes.y;
@@ -281,7 +287,62 @@ void main(){
     vec3 pc = palette(g) * (.82 + .3 * (d.y * .5 + .5));
     col = mix(col, pc, m);
   }
+  for (int i = 0; i < ${SPAWNS}; i++) {
+    vec4 P = uPills[i];
+    float a = P.z;
+    if (a > 4.) continue;
+    float seed = P.w;
+    float grow = smoothstep(0., .35, a) * (1. - smoothstep(3., 4., a));
+    float cx = (floor(P.x * n) + .5) / n;
+    float cy = P.y + a * .025;
+    float hh = (.08 + .14 * hash(vec2(seed, 1.))) * grow + 1e-4;
+    float ww = .3 / n;
+    vec2 d = vec2((uv.x - cx) / ww, (uv.y - cy) / hh);
+    float r = length(d);
+    col *= 1. - .35 * (1. - smoothstep(.9, 1.8, r)) * grow;   // soft shadow around it
+    float m = (1. - smoothstep(.9, 1., r)) * step(.002, grow);
+    float g = hash(vec2(seed, 2.)) + d.y * .12;
+    col = mix(col, palette(g) * (.82 + .3 * (d.y * .5 + .5)), m);
+  }
   gl_FragColor = vec4(finish(col, .08, .06), 1.);
+}`,
+
+    // Soft volumetric clouds: two drifting layers of billowy noise over a palette sky. Each layer
+    // marches a few steps toward the sun to shadow itself, so thick parts darken and thin edges glow
+    // (a silver lining). The sun sits where your finger last was.
+    clouds: `
+uniform vec2 uLight;   // sun position, uv
+float density(vec2 q, float t){
+  float f = fbm(q + vec2(t * .6, t * .1), 6.);
+  float g = fbm(q * 2.3 - vec2(t * .3, 0.), 4.);
+  return smoothstep(.47, .66, f * .75 + g * .35);
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 asp = vec2(uRes.x / uRes.y, 1.);
+  vec2 p = uv * asp, lp = uLight * asp;
+  float t = uTime;
+  vec3 col = mix(palette(.45), palette(.12), uv.y) * .85;
+  float sun = exp(-dot(p - lp, p - lp) * 6.);
+  col += palette(1.) * sun * .6;
+  vec2 toSun = normalize(lp - p + 1e-4);
+  vec3 litCol = mix(palette(.85), vec3(1.), .6);
+  vec3 shadowCol = mix(palette(.4), litCol, .45);
+  for (int L = 0; L < 2; L++) {
+    float fl = float(L);
+    float sc = mix(1.6, 2.4, fl);
+    vec2 q = p * sc + vec2(fl * 7.3, fl * 3.1);
+    float tt = t * (1. + fl * .6);
+    float d = density(q, tt);
+    if (d < .001) continue;
+    float acc = 0.;
+    for (int i = 1; i <= 4; i++) acc += density(q + toSun * sc * .05 * float(i), tt);
+    float lit = exp(-acc * .8);
+    float rim = (1. - d) * lit;
+    vec3 c = mix(shadowCol, litCol, lit) + palette(1.) * rim * sun * 1.5 + rim * .15;
+    col = mix(col, c, d * mix(.85, .97, fl));
+  }
+  gl_FragColor = vec4(finish(col, .15, .02), 1.);
 }`,
   };
 
@@ -301,6 +362,9 @@ void main(){
   let strikeAt = 0;
   const drag = { x: 1, y: 0, amount: 0 }; // recent drag direction, and how much you're moving
   let ribExtra = 0; // ribs added/removed by dragging sideways
+  const spawned = Array.from({ length: SPAWNS }, () => ({ x: 0, y: 0, seed: 0, age: 99 }));
+  const lastSpawn = { x: 0, y: 0 };
+  const light = { x: 0.28, y: 0.82 }; // clouds' sun; drifts to your finger and stays there
 
   function compile(type, src) {
     const s = gl.createShader(type);
@@ -326,7 +390,7 @@ void main(){
   function program(name) {
     if (!programs[name]) {
       programs[name] = link(COMMON + BODIES[name],
-        ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uParam', 'uCols', 'uTouch', 'uTrail', 'uTexel', 'uRip', 'uStrikes', 'uDir']);
+        ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uParam', 'uCols', 'uTouch', 'uTrail', 'uTexel', 'uRip', 'uStrikes', 'uDir', 'uPills', 'uLight']);
     }
     return programs[name];
   }
@@ -449,6 +513,11 @@ void main(){
     Object.assign(lastRipple, { x, y });
   }
 
+  function spawnPill(x, y) {
+    Object.assign(oldest(spawned), { x, y, seed: Math.random() * 100, age: 0 });
+    Object.assign(lastSpawn, { x, y });
+  }
+
   function bindPointers() {
     canvas.addEventListener('pointerdown', (e) => {
       const [x, y] = toUV(e);
@@ -457,6 +526,7 @@ void main(){
       path.length = 0;
       path.push([x, y], [x, y]); // a dot even if the finger never moves
       if (style.prog === 'liquid') dropRipple(x, y);
+      if (style.prog === 'pills') spawnPill(x, y);
       try { canvas.setPointerCapture(e.pointerId); } catch {}
     });
     canvas.addEventListener('pointermove', (e) => {
@@ -471,6 +541,7 @@ void main(){
       }
       Object.assign(touch, { x, y });
       if (style.prog === 'liquid' && Math.hypot(x - lastRipple.x, y - lastRipple.y) > RIPPLE_GAP) dropRipple(x, y);
+      if (style.prog === 'pills' && Math.hypot(x - lastSpawn.x, y - lastSpawn.y) > SPAWN_GAP) spawnPill(x, y);
       if (path.length < 48) path.push([x, y]);
     });
     const lift = (e) => {
@@ -503,6 +574,13 @@ void main(){
     ripples.forEach((r, i) => { r.age = Math.min(99, r.age + dt); rip.set([r.x, r.y, r.age], i * 3); });
     const stk = new Float32Array(STRIKES * 4);
     strikes.forEach((k, i) => { k.age = Math.min(99, k.age + dt); stk.set([k.x, k.y, k.seed, k.age], i * 4); });
+    const pil = new Float32Array(SPAWNS * 4);
+    spawned.forEach((q, i) => { q.age = Math.min(99, q.age + dt); pil.set([q.x, q.y, q.age, q.seed], i * 4); });
+    if (touch.down) {
+      const k = Math.min(1, dt * 4);
+      light.x += (touch.x - light.x) * k;
+      light.y += (touch.y - light.y) * k;
+    }
 
     resize();
     const liquid = style.prog === 'liquid';
@@ -522,6 +600,8 @@ void main(){
     gl.uniform3fv(U.uRip, rip);
     gl.uniform4fv(U.uStrikes, stk);
     gl.uniform3f(U.uDir, drag.x, drag.y, Math.min(1, drag.amount));
+    gl.uniform4fv(U.uPills, pil);
+    gl.uniform2f(U.uLight, light.x, light.y);
     if (liquid) {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, trail.tex[trail.read]);

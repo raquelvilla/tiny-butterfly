@@ -15,8 +15,10 @@ A colour a day, folded into palettes and liquid light.
     it, each bolt swerving with the noise's folds and leaning the way you drag.
   - **ribs**: vertical stripes, each a slice of the palette from dark to light. Holding breaks them
     into stepped tiles that heal when you let go. Dragging sideways adds or removes ribs.
-  - **pills**: columns of glowing ellipses on charcoal that swell in a slow wave.
-    No touch effect yet.
+  - **pills**: columns of glowing ellipses on charcoal that swell in a slow wave. Touch or drag to
+    spawn new pills; they snap into the columns, drift up and fade after a few seconds.
+  - **clouds**: soft volumetric clouds in two drifting layers over a palette sky, self-shadowed with
+    glowing edges. Your finger moves the sun.
 
 ## Run it
 
