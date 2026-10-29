@@ -20,9 +20,9 @@ const Visual = (() => {
   const GRID_W = 96;        // storm noise is read back at this width so bolts can be traced along it
   const BOLT_LEN = 0.5;     // longest bolt, in screen heights
   const SOURCES = 6;        // vapour: 2 drifting ice pieces + up to 4 you drop
-  const VAPOUR_SCALE = 0.8; // vapour buffer resolution relative to the canvas (higher = finer fibres)
+  const VAPOUR_SCALE = 1.0; // vapour buffer resolution relative to the canvas (higher = finer fibres)
   const ICE_LIFE = 12;      // seconds a dropped piece takes to sublimate away
-  const VAPOUR_LIFE = 2.5;  // seconds a wisp of vapour lives before it's gone
+  const VAPOUR_LIFE = 3.8;  // seconds a wisp of vapour lives before it's gone
   const WIPE = 0.06;        // mist: how wide your finger wipes the glass, in screen heights
 
   const STYLES = {
@@ -403,7 +403,7 @@ void main(){
   float v = V.r * pow(max(1. - V.g, 0.), 1.4);   // born bright, fades as it ages
   v = v / (1. + v * .35);                       // soften where plumes pile up
   vec3 c1 = palette(.3) * .5, c2 = palette(.7), c3 = mix(palette(1.), vec3(1.), .5);
-  vec3 col = mix(vec3(.006), c1, smoothstep(.05, .35, v));   // faint vapour stays dark
+  vec3 col = mix(vec3(.006), c1, smoothstep(.07, .4, v));    // faint vapour stays dark, so strands read
   col = mix(col, c2, smoothstep(.28, .7, v));
   col = mix(col, c3, smoothstep(.75, 1., v));
   for (int i = 0; i < ${SOURCES}; i++) {
@@ -535,27 +535,28 @@ uniform sampler2D uPrev;
 uniform vec2 uSize;
 uniform float uDt;
 uniform vec4 uSrc[${SOURCES}];
-vec2 curl(vec2 p){
+vec2 curl(vec2 p, float oct){
   float e = .05;
-  float a = fbm(p + vec2(0., e), 3.), b = fbm(p - vec2(0., e), 3.);
-  float c = fbm(p + vec2(e, 0.), 3.), d = fbm(p - vec2(e, 0.), 3.);
+  float a = fbm(p + vec2(0., e), oct), b = fbm(p - vec2(0., e), oct);
+  float c = fbm(p + vec2(e, 0.), oct), d = fbm(p - vec2(e, 0.), oct);
   return vec2(a - b, -(c - d)) / (2. * e);
 }
 void main(){
   vec2 uv = gl_FragCoord.xy / uSize;
   vec2 asp = vec2(uSize.x / uSize.y, 1.);
   vec2 p = uv * asp;
-  vec2 vel = curl(p * 1.6 + vec2(0., uTime * .12)) * .26 + vec2(0., .1);   // broad, sweeping currents
+  vec2 vel = curl(p * 1.6 + vec2(0., uTime * .06), 3.) * .13 + vec2(0., .05)   // broad, slow currents
+          + curl(p * 5.5 - vec2(uTime * .04, 0.) + 7., 2.) * .035;             // and fine eddies within them
   float em = 0.;
   for (int i = 0; i < ${SOURCES}; i++) {
     vec4 S = uSrc[i];
     if (S.z <= 0.) continue;
     vec2 d = p - S.xy * asp;
     float r = length(d) + 1e-4;
-    vel += d / r * .5 * S.z * exp(-r * 5.);
+    vel += d / r * .25 * S.z * exp(-r * 5.);
     float ang = atan(d.y, d.x);
-    float fib = noise(vec2(ang * 38. + S.w, uTime * 2. + S.w)) * noise(vec2(ang * 11. - S.w, uTime * .7));
-    em += exp(-r * 34.) * (.04 + pow(fib, 2.) * 5.) * S.z;
+    float fib = noise(vec2(ang * 72. + S.w, uTime * 1. + S.w)) * noise(vec2(ang * 19. - S.w, uTime * .35));
+    em += exp(-r * 32.) * (.016 + pow(fib, 2.5) * 9.) * S.z;  // mostly fibre, only a little smooth glow
   }
   // Vapour has a lifecycle: R = density, G = age (0 newborn .. 1 dead). It's carried by the flow,
   // ages every frame, and is gone at age 1, so only the last few seconds of vapour ever exist and
