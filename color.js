@@ -34,6 +34,25 @@ const Color = (() => {
     return { L, C: Math.hypot(a, b), h: ((Math.atan2(b, a) * 180) / Math.PI + 360) % 360 };
   }
 
+  // OKLCH back to hex, pulling chroma in until the colour fits in sRGB.
+  function fromOklch(L, C, h) {
+    const enc = (c) => Math.round(255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055));
+    for (let c = C; ; c *= 0.92) {
+      const a = c * Math.cos((h * Math.PI) / 180), b = c * Math.sin((h * Math.PI) / 180);
+      const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+      const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+      const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+      const rgb = [
+        4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+        -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+        -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+      ];
+      if (rgb.every((v) => v >= -0.001 && v <= 1.001) || c < 0.002) {
+        return '#' + rgb.map((v) => enc(Math.min(1, Math.max(0, v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+      }
+    }
+  }
+
   const hueDist = (a, b) => {
     const d = Math.abs(a - b) % 360;
     return d > 180 ? 360 - d : d;
@@ -113,5 +132,18 @@ const Color = (() => {
     return false;
   }
 
-  return { parseHex, hexToRgb, toOklab, toOklch, hueDist, readableInk, suggestPalettes, suggestionDates, swapSlot };
+  // Example palettes grown from one colour: each harmony rule's hues, at a spread of lightness so the
+  // palette has depth (not just a ring of hues at one brightness). For when there aren't enough days yet.
+  function harmonize(hex) {
+    const { L, C, h } = toOklch(hex);
+    const chroma = Math.max(C, 0.09);                  // a grey seed still gets colour to work with
+    const lights = [L, L > 0.6 ? L - 0.13 : L + 0.13, L > 0.55 ? L - 0.24 : L + 0.24, L > 0.8 ? L - 0.06 : L + 0.06];
+    return RULES.map((r) => ({
+      rule: r.name,
+      hexes: r.offsets.map((o, i) =>
+        i === 0 ? hex : fromOklch(Math.min(0.94, Math.max(0.42, lights[i % lights.length])), chroma * (i % 2 ? 0.85 : 1), (h + o + 360) % 360)),
+    }));
+  }
+
+  return { parseHex, hexToRgb, toOklab, toOklch, fromOklch, hueDist, readableInk, suggestPalettes, suggestionDates, swapSlot, harmonize };
 })();

@@ -6,7 +6,8 @@ A colour a day, folded into palettes and liquid light.
   The diary below shows every day you've kept, month by month. Tap any day to see or edit it.
 - **Palettes**: tap 3–6 of your colours to make a palette. Stuck? **Harmonies** finds palettes in
   your own colours using colour harmony (analogous, complementary, triadic, split-complementary,
-  tetradic). Tap a colour in a suggestion to swap it. *Keep* saves it, and *Tweak* opens it in the builder.
+  tetradic). Tap a colour in a suggestion to swap it. With fewer than 3
+  colours, it shows example palettes grown from your latest colour instead, ready to play in the visuals. *Keep* saves it, and *Tweak* opens it in the builder.
 - **Visual**: a palette becomes a full-screen shader. Tap ◎ to save a still. Each style answers touch
   in its own way:
   - **liquid**: smooth domain-warped noise. Your finger draws a liquid-chrome trail that spreads wider

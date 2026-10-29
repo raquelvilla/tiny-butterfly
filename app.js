@@ -320,8 +320,9 @@
   function renderSuggestions() {
     const box = $('#suggestions');
     box.replaceChildren();
+    $('#inspire > .hint').hidden = !suggestions.length; // "tap to swap" only applies to your own days
     if (!suggestions.length) {
-      box.append(el('p', { className: 'empty-note', textContent: 'Keep at least 3 colours and I’ll find palettes in them.' }));
+      renderExamples(box);
       return;
     }
     suggestions.forEach((s, si) => {
@@ -341,6 +342,28 @@
         el('div', { className: 'row' },
           el('button', { className: 'primary', textContent: 'Keep', onclick: () => keepSuggestion(si) }),
           el('button', { className: 'ghost', textContent: 'Tweak', onclick: () => tweakSuggestion(si) }))));
+    });
+  }
+
+  // Not enough days to group yet: show palettes grown from your latest colour by each harmony rule,
+  // to look at and play in the visuals. (They can't be kept; palettes are made of your own days.)
+  function renderExamples(box) {
+    const days = Object.keys(state.days).sort();
+    const seed = days.length ? state.days[days[days.length - 1]].hex : LILAC;
+    const n = days.length;
+    box.append(el('p', { className: 'hint', textContent:
+      `Grown from ${seed}. Keep ${3 - n} more colour${3 - n === 1 ? '' : 's'} and Harmonies will group your own days instead.` }));
+    const rules = Color.harmonize(seed).sort(() => Math.random() - 0.5).slice(0, 3);
+    rules.forEach((r) => {
+      const row = el('div', { className: 'strip' }, ...r.hexes.map((h) => {
+        const sp = el('span', { title: h });
+        sp.style.backgroundColor = h;
+        return sp;
+      }));
+      box.append(el('div', { className: 'suggestion' },
+        el('p', { className: 'rule', textContent: r.rule }), row,
+        el('div', { className: 'row' },
+          el('button', { className: 'primary', textContent: 'Play', onclick: () => playExample(r) }))));
     });
   }
 
@@ -371,6 +394,12 @@
   const DEMO = ['#F6C9B8', '#E4572E', '#3D2C8D', '#C9B6F2'];
   let visualReady = null;
 
+  let example = null; // a Harmonies example being played (not saved)
+  function playExample(r) {
+    example = { id: '_example', name: r.rule, hexes: r.hexes };
+    show('visual');
+  }
+
   function visualSources() {
     const out = state.palettes
       .map((p) => ({ id: p.id, name: p.name || 'untitled', hexes: paletteHexes(p) }))
@@ -378,6 +407,7 @@
     const recent = Object.keys(state.days).sort().slice(-5).map((k) => state.days[k].hex);
     if (recent.length >= 2) out.push({ id: '_recent', name: 'Latest colours', hexes: recent });
     out.push({ id: '_demo', name: 'Butterfly', hexes: DEMO });
+    if (example) out.unshift(example);
     return out;
   }
 
@@ -387,7 +417,7 @@
     const sources = visualSources();
     const sel = $('#visPalette');
     sel.replaceChildren(...sources.map((s) => el('option', { value: s.id, textContent: s.name })));
-    const chosen = sources.find((s) => s.id === state.lastVisual) || sources[0];
+    const chosen = (example && sources[0]) || sources.find((s) => s.id === state.lastVisual) || sources[0];
     sel.value = chosen.id;
     Visual.setPalette(chosen.hexes);
     setStyle(state.lastStyle);
@@ -398,6 +428,7 @@
   $('#visPalette').addEventListener('change', (e) => {
     const s = visualSources().find((x) => x.id === e.target.value);
     if (!s) return;
+    if (s.id !== '_example') example = null;
     state.lastVisual = s.id;
     save();
     Visual.setPalette(s.hexes);
