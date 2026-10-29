@@ -417,8 +417,8 @@ void main(){
 }`,
 
     // Fire from the heat candles.js painted (uTrail: R = heat, G = smoke). Rising turbulence makes the
-    // heat lick upward in ragged tongues; a fire ramp (deep red, orange, gold, white-hot) colours it, so
-    // where many flames' heat piles up they merge and burn brighter. Plus a warm glow (uVap) over the dark.
+    // heat lick upward in ragged tongues; the palette, dark to light, colours it like a fire ramp, so
+    // where many flames' heat piles up they merge and burn brighter. Plus a glow (uVap) over the dark.
     candles: `
 uniform sampler2D uTrail, uVap;
 uniform vec2 uTexel;   // one texel of the small glow layer
@@ -446,13 +446,12 @@ void main(){
   float h = (own * 1.6 + smoothstep(.12, .75, shared) * .55) * (.6 + .75 * n2);  // ragged, licking edges
   float smoke = texture2D(uTrail, uv + off * .6).g;
 
-  vec3 tint = palette(1.);
-  vec3 c = vec3(0.);
-  c = mix(c, vec3(.42, .05, .02), smoothstep(.05, .22, h));
-  c = mix(c, vec3(1., .4, .08), smoothstep(.18, .48, h));
-  c = mix(c, vec3(1., .78, .32), smoothstep(.42, .95, h));
-  c = mix(c, vec3(1., .97, .86), smoothstep(1.25, 2.1, h));   // white only in the very hottest heart
-  c *= mix(vec3(1.), tint * 1.15, .18);                          // a touch of your palette in the fire
+  // the fire burns in your palette: its darkest colour at the cool, faint edges, climbing through the
+  // palette to the lightest near the core, then a soft white-hot heart
+  float t = smoothstep(.04, 1.7, h);
+  vec3 c = palette(t) * smoothstep(.03, .3, h) * (.8 + .45 * t);   // fades to black at the edges
+  c = mix(c, mix(palette(1.), vec3(1.), .55), smoothstep(1.6, 2.4, h) * .8);
+  vec3 tint = palette(.8);
 
   vec3 g = texture2D(uVap, uv).rgb * 2.;
   float wsum = 2.;
@@ -465,7 +464,7 @@ void main(){
     }
   }
   float glow = (g / wsum).r;
-  vec3 warm = mix(vec3(1., .5, .18), tint, .3);
+  vec3 warm = tint;
   vec3 col = c + warm * glow * .7 + vec3(.55, .52, .5) * smoke * .3;
   col = col / (1. + max(col - .9, 0.) * .8);
   gl_FragColor = vec4(finish(col, .4, .02), 1.);

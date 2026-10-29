@@ -32,7 +32,7 @@ A colour a day, folded into palettes and liquid light.
   - **birthdays**: an abstraction of a birthday: only flames, in the dark. Tap to light a flame wherever
     you touch; drag to blow, and flames lean away from your breath while the nearest go out with a
     curl of smoke. Flames crowded together merge into one bigger, brighter, taller fire: the more you
-    light, the more it all burns. Your palette tints the firelight.
+    light, the more it all burns. The fire burns in your palette, darkest at the edges to lightest at the heart.
 
 ## Run it
 
