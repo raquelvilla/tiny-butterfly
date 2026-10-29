@@ -65,14 +65,21 @@ void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 asp = vec2(uRes.x / uRes.y, 1.);
   vec2 p = uv * asp * FIELD;
-  float glow = 0.;
+  // Water ripples: a packet of concentric crests travels outward and fades. Each crest bends the
+  // colour slightly (refraction) and catches light on its slope (shade), which is what reads as a ring.
+  float shade = 0.;
   for (int i = 0; i < ${RIPPLES}; i++) {
     float a = uRip[i].z;
     vec2 d = (uv - uRip[i].xy) * asp;
     float r = length(d);
-    float ring = exp(-pow((r - a * .45) * 14., 2.)) * exp(-a * 1.2);
-    p += d / max(r, 1e-3) * ring * .3;
-    glow += ring;
+    float ahead = r - a * .32;                        // > 0 outside the leading edge
+    // Envelope centred just inside the front: steep ahead of it, a longer tail of crests behind.
+    float e = ahead + .06;
+    float packet = exp(-pow(max(e, 0.) * 22., 2.) - pow(min(e, 0.) * 9., 2.));
+    float fade = exp(-a * 1.1) * smoothstep(0., .04, r);
+    float phase = ahead * 75.;
+    p += d / max(r, 1e-3) * sin(phase) * packet * fade * .035;
+    shade += cos(phase) * packet * fade;
   }
   float t = uTime;
   float w = uWarp + uAudio.x * 3.;
@@ -81,7 +88,8 @@ void main(){
   float f = fbm(p + w * r);
   float x = smoothstep(.3, .7, f + (r.x - .5) * .45);
   vec3 col = palette(x);
-  col *= .9 + .2 * smoothstep(.3, .8, f) + uAudio.z * .35 + glow * .08;
+  col *= .9 + .2 * smoothstep(.3, .8, f) + uAudio.z * .35 + shade * .16;
+  col += pow(max(shade, 0.), 3.) * .12;   // glint on crest tops
   gl_FragColor = vec4(finish(col, .18, .03), 1.);
 }`,
 
