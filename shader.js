@@ -3,7 +3,8 @@
 //   liquid — your finger draws a liquid-chrome trail (a feedback buffer) that refracts the colours
 //            underneath and melts away
 //            (taps and drawing also send ripples through the colours)
-//   storm  — holding a finger down sends lightning through the noise's own veins
+//   storm  — holding a finger down sends lightning along the noise's own paths (traced on the CPU
+//            from a small read-back of the noise, then drawn as glowing segments)
 //   ribs   — the ribs around your finger break into stepped tiles; dragging sideways changes their count
 //   pills  — your finger spawns pills that grow into the nearest column, drift and fade
 //   clouds — soft volumetric clouds; your finger moves the sun that lights them
@@ -14,8 +15,12 @@ const Visual = (() => {
   const BRUSH = 0.05;      // trail thickness, in screen heights
   const RIPPLES = 8;
   const RIPPLE_GAP = 0.14; // uv distance a drawing finger travels between ripples
-  const STRIKES = 4;        // lightning strikes alive at once (each lingers ~0.35s)
+  const STRIKES = 3;        // lightning strikes alive at once (each lingers ~0.4s)
   const STRIKE_EVERY = 140; // ms between strikes while held
+  const SEG_PER = 32;       // traced line segments per strike
+  const MAXSEG = STRIKES * SEG_PER;
+  const GRID_W = 96;        // storm noise is read back at this width so bolts can be traced along it
+  const BOLT_LEN = 0.5;     // longest bolt, in screen heights
   const SPAWNS = 16;        // finger-spawned pills alive at once (each lives ~4s)
   const SPAWN_GAP = 0.035;  // uv distance a dragging finger travels between pills
 
@@ -168,69 +173,49 @@ void main(){
   gl_FragColor = vec4(finish(col, .18, .03), 1.);
 }`,
 
-    // Fine, detailed warped noise that conducts lightning. Each bolt is one connected line heading out
-    // from the finger whose sideways path is steered by the broad shapes of the same noise, sampled
-    // along the bolt, so it swerves with the visible folds; a little fine jitter makes it crackle.
-    // Bolts grow out, fork, lean the way you drag, and re-strike on new paths every few frames.
+    // Fine, detailed warped noise that conducts lightning. Bolts are traced in JS along the contour of
+    // the noise that passes through the finger (see traceStrike) and arrive here as line segments in a
+    // small float texture; each one is drawn as a thin white core in a palette-tinted glow, growing
+    // out from the finger and fading.
     storm: `
-uniform vec4 uStrikes[${STRIKES}];  // xy = origin uv, z = seed, w = age in seconds
-uniform vec3 uDir;                  // xy = drag direction, z = 0..1 how much you're moving
-#define STORM_SCALE (FIELD * 1.35)
-// (core, glow) of one bolt grown to 'reach' (0..1) of its length
-vec2 bolt(vec2 p, vec2 o, float ang, float len, float reach, float bend, float seed){
-  vec2 dir = vec2(cos(ang), sin(ang)), side = vec2(-dir.y, dir.x);
-  vec2 d = p - o;
-  float s = dot(d, dir);
-  float end = len * reach;
-  if (s < 0. || s > end) return vec2(0.);
-  float across = dot(d, side);
-  if (abs(across) > bend * .5 + .03) return vec2(0.);    // too far from any possible path
-  vec2 r;
-  vec2 axis = o + dir * s;
-  float coarse = warped(axis * STORM_SCALE, 3., r);       // the noise's broad shapes along the path
-  float jitter = (noise(vec2(s * 40., seed)) - .5) * .02 + (noise(vec2(s * 110., seed + 5.)) - .5) * .007;
-  float path = ((coarse - .5) * bend + jitter) * smoothstep(0., .05, s);
-  float px = abs(across - path) * uRes.y;                 // distance to the bolt, in pixels
-  float taper = 1. - s / len;
-  float tip = smoothstep(end - .025, end, s) * (1. - reach) * 2.;   // bright leading tip
-  return vec2(smoothstep(1.5, 0., px) * (taper + tip), exp(-px * .12) * taper);
-}
+uniform sampler2D uSegs;  // row 0: segment a.xy, b.xy (uv); row 1: x = strike age, y = 0..1 along its bolt, z = weight
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 asp = vec2(uRes.x / uRes.y, 1.);
   float f;
-  vec3 col = field(uv * asp * STORM_SCALE, 7., f);
+  vec3 col = field(uv * asp * FIELD * 1.35, 7., f);
   vec2 p = uv * asp;
-  vec2 light = vec2(0.);
-  float moveAng = atan(uDir.y, uDir.x + 1e-5);
-  for (int k = 0; k < ${STRIKES}; k++) {
-    vec4 S = uStrikes[k];
-    float a = S.w;
-    if (a > .35) continue;
-    vec2 o = S.xy * asp;
-    float seed = S.z;
-    float reach = smoothstep(0., .1, a);
-    float life = 1. - smoothstep(.04, .35, a);
-    for (int i = 0; i < 3; i++) {
-      float fi = float(i);
-      float rnd = hash(vec2(fi, seed));
-      float ang = mix(rnd * 6.2832, moveAng + (rnd - .5) * 1.2, uDir.z);
-      float len = .25 + .35 * hash(vec2(seed, fi + 4.));
-      float bend = .5 + .4 * hash(vec2(fi + 9., seed));
-      light += bolt(p, o, ang, len, reach, bend, seed + fi * 13.) * life;
-      // a fork leaving part-way along (from where the main path actually is), also noise-steered
-      float s0 = len * .4;
-      vec2 r;
-      vec2 a0 = o + vec2(cos(ang), sin(ang)) * s0;
-      vec2 fo = a0 + vec2(-sin(ang), cos(ang)) * (warped(a0 * STORM_SCALE, 3., r) - .5) * bend;
-      float fang = ang + (hash(vec2(fi, seed + 2.)) - .5) * 1.5;
-      light += .65 * bolt(p, fo, fang, len * .55, smoothstep(.4, 1., reach), bend * .7, seed + fi * 29.) * life;
-    }
+  float core = 0., glow = 0.;
+  for (int i = 0; i < ${MAXSEG}; i++) {
+    float u = (float(i) + .5) / ${MAXSEG}.;
+    vec4 A = texture2D(uSegs, vec2(u, .25));
+    vec4 B = texture2D(uSegs, vec2(u, .75));
+    float a = B.x;
+    if (a > .4 || B.y > smoothstep(0., .12, a)) continue;   // dead, or not grown out this far yet
+    vec2 pa = p - A.xy * asp, ba = (A.zw - A.xy) * asp;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0., 1.);
+    float d = length(pa - ba * h) * uRes.y;                 // distance to the segment, in pixels
+    float w = B.z * (1. - smoothstep(.05, .4, a)) * (1. - B.y * .5);
+    core += smoothstep(1.4, 0., d) * w;
+    glow += exp(-d * .12) * w;
   }
   vec3 tint = palette(1.) * 1.2 + .08;
-  col += tint * light.y * .45;
-  col += mix(tint, vec3(1.), .8) * min(light.x, 1.6);
+  col += tint * glow * .4;
+  col += mix(tint, vec3(1.), .8) * min(core, 1.5);
   gl_FragColor = vec4(finish(col, .22, .025), 1.);
+}`,
+
+    // The storm noise value alone (its broad paths: three octaves), packed into two 8-bit channels,
+    // for reading back to trace bolts.
+    stormField: `
+uniform vec2 uSize;
+void main(){
+  vec2 uv = gl_FragCoord.xy / uSize;
+  vec2 asp = vec2(uRes.x / uRes.y, 1.);
+  float f;
+  field(uv * asp * FIELD * 1.35, 3., f);
+  float v = clamp(f, 0., 1.) * 255.;
+  gl_FragColor = vec4(floor(v) / 255., fract(v), 0., 1.);
 }`,
 
     // Vertical ribs, each a drifting slice of the palette. Around your finger they break into
@@ -391,8 +376,11 @@ void main(){
   const path = []; // finger points not yet stamped into the trail (capped so a stall can't pile up)
   const ripples = Array.from({ length: RIPPLES }, () => ({ x: 0, y: 0, age: 99 }));
   const lastRipple = { x: 0, y: 0 };
-  const strikes = Array.from({ length: STRIKES }, () => ({ x: 0, y: 0, seed: 0, age: 99 }));
+  const strikes = Array.from({ length: STRIKES }, () => ({ age: 99 }));
   let strikeAt = 0;
+  const segData = new Float32Array(MAXSEG * 2 * 4); // the uSegs texture's contents
+  let segTex = null;   // null until made; false if this device can't sample float textures
+  let grid = null;     // read-back of the storm noise: { w, h, tex, fb, buf, f }
   const drag = { x: 1, y: 0, amount: 0 }; // recent drag direction, and how much you're moving
   let ribExtra = 0; // ribs added/removed by dragging sideways
   const spawned = Array.from({ length: SPAWNS }, () => ({ x: 0, y: 0, seed: 0, age: 99 }));
@@ -423,7 +411,7 @@ void main(){
   function program(name) {
     if (!programs[name]) {
       programs[name] = link(COMMON + BODIES[name],
-        ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uParam', 'uCols', 'uTouch', 'uTrail', 'uTexel', 'uRip', 'uStrikes', 'uDir', 'uPills', 'uLight']);
+        ['uRes', 'uTime', 'uWarp', 'uBright', 'uCount', 'uParam', 'uCols', 'uTouch', 'uTrail', 'uTexel', 'uRip', 'uPills', 'uLight', 'uSegs', 'uSize']);
     }
     return programs[name];
   }
@@ -546,6 +534,111 @@ void main(){
     Object.assign(lastRipple, { x, y });
   }
 
+  // ---- storm: read the noise back, trace bolts along it, hand the segments to the shader ----
+  function ensureSegTex() {
+    if (segTex !== null) return segTex;
+    if (!gl.getExtension('OES_texture_float')) return (segTex = false);
+    segTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, segTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    for (let i = 0; i < MAXSEG; i++) segData[(MAXSEG + i) * 4] = 99; // all dead
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, MAXSEG, 2, 0, gl.RGBA, gl.FLOAT, segData);
+    return segTex;
+  }
+
+  // Render the storm noise small, exactly as the storm shader computes it, and read it back.
+  function readField() {
+    const w = GRID_W, h = Math.max(8, Math.round(GRID_W * canvas.height / canvas.width));
+    if (!grid || grid.w !== w || grid.h !== h) {
+      if (grid) { gl.deleteTexture(grid.tex); gl.deleteFramebuffer(grid.fb); }
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      grid = { w, h, tex, fb, buf: new Uint8Array(w * h * 4), f: new Float32Array(w * h) };
+    }
+    const { prog, U } = program('stormField');
+    gl.bindFramebuffer(gl.FRAMEBUFFER, grid.fb);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(prog);
+    gl.uniform2f(U.uRes, canvas.width, canvas.height);
+    gl.uniform2f(U.uSize, w, h);
+    gl.uniform1f(U.uTime, time);
+    gl.uniform1f(U.uWarp, cur.warp);
+    gl.uniform1f(U.uCount, count);
+    gl.uniform3fv(U.uCols, cols);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, grid.buf);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    for (let i = 0; i < w * h; i++) grid.f[i] = (grid.buf[i * 4] + grid.buf[i * 4 + 1] / 255) / 255;
+  }
+
+  // Bilinear noise value at uv.
+  function fieldAt(x, y) {
+    const gx = Math.min(grid.w - 1.001, Math.max(0, x * grid.w - 0.5));
+    const gy = Math.min(grid.h - 1.001, Math.max(0, y * grid.h - 0.5));
+    const ix = Math.floor(gx), iy = Math.floor(gy), fx = gx - ix, fy = gy - iy;
+    const i = iy * grid.w + ix, F = grid.f;
+    return (F[i] * (1 - fx) + F[i + 1] * fx) * (1 - fy) + (F[i + grid.w] * (1 - fx) + F[i + grid.w + 1] * fx) * fy;
+  }
+
+  // Bolts walk along the contour of the noise through the finger: each step goes along the contour,
+  // nudges back onto it, and adds a little crackle; branches peel off onto neighbouring contours.
+  function traceStrike(x0, y0, slot) {
+    readField();
+    const asp = canvas.width / canvas.height;
+    const segs = [];
+    const grad = (x, y) => {
+      const ex = 1 / grid.w, ey = 1 / grid.h;
+      return [(fieldAt(x + ex, y) - fieldAt(x - ex, y)) / (2 * ex * asp), (fieldAt(x, y + ey) - fieldAt(x, y - ey)) / (2 * ey)];
+    };
+    const arm = (x, y, sign, steps, level, weight, travelled, branch) => {
+      const step = 0.02;
+      for (let k = 0; k < steps && segs.length < SEG_PER; k++) {
+        const [gx, gy] = grad(x, y);
+        const g = Math.hypot(gx, gy);
+        let nx = 0, ny = 0, tx, ty, pull = 0;
+        if (g < 1e-4) { const a = Math.random() * 6.2832; tx = Math.cos(a); ty = Math.sin(a); }
+        else {
+          nx = gx / g; ny = gy / g; tx = -ny * sign; ty = nx * sign;
+          pull = Math.max(-0.012, Math.min(0.012, (level - fieldAt(x, y)) / g));
+        }
+        const off = pull + (Math.random() - 0.5) * 0.008;
+        const bx = (x * asp + tx * step + nx * off) / asp, by = y + ty * step + ny * off;
+        segs.push([x, y, bx, by, Math.min(1, travelled / BOLT_LEN), weight]);
+        travelled += step; x = bx; y = by;
+        if (x < 0 || x > 1 || y < 0 || y > 1 || travelled > BOLT_LEN) break;
+        if (!branch && Math.random() < 0.12) {
+          arm(x, y, Math.random() < 0.5 ? sign : -sign, 7, level + (Math.random() - 0.5) * 0.08, weight * 0.6, travelled, true);
+        }
+      }
+    };
+    const level = fieldAt(x0, y0);
+    const [gx, gy] = grad(x0, y0);
+    let sign = Math.random() < 0.5 ? 1 : -1;
+    if (drag.amount > 0.3) sign = (-gy * drag.x + gx * drag.y) >= 0 ? 1 : -1; // main arm heads the way you drag
+    arm(x0, y0, sign, 20, level, 1, 0, false);
+    arm(x0, y0, -sign, 9, level, 0.8, 0, false);
+    for (let j = 0; j < SEG_PER; j++) {
+      const i = slot * SEG_PER + j, sg = segs[j];
+      if (sg) {
+        segData.set(sg.slice(0, 4), i * 4);
+        segData.set([0, sg[4], sg[5], 0], (MAXSEG + i) * 4);
+      } else {
+        segData[(MAXSEG + i) * 4] = 99;
+      }
+    }
+  }
+
   function spawnPill(x, y) {
     Object.assign(oldest(spawned), { x, y, seed: Math.random() * 100, age: 0 });
     Object.assign(lastSpawn, { x, y });
@@ -599,14 +692,23 @@ void main(){
     // Pressing takes hold quickly; letting go heals over ~2s.
     touch.z += ((touch.down ? 1 : 0) - touch.z) * Math.min(1, dt * (touch.down ? 6 : 0.9));
     drag.amount *= Math.pow(0.05, dt);
-    if (touch.down && now - strikeAt > STRIKE_EVERY) {
+    resize();
+    const storm = style.prog === 'storm' && ensureSegTex();
+    if (storm && touch.down && now - strikeAt > STRIKE_EVERY) {
       strikeAt = now;
-      Object.assign(oldest(strikes), { x: touch.x, y: touch.y, seed: Math.random() * 100, age: 0 });
+      const slot = strikes.indexOf(oldest(strikes));
+      strikes[slot].age = 0;
+      traceStrike(touch.x, touch.y, slot);
     }
+    strikes.forEach((k, slot) => {
+      k.age = Math.min(99, k.age + dt);
+      for (let j = 0; j < SEG_PER; j++) {
+        const i = (MAXSEG + slot * SEG_PER + j) * 4;
+        if (segData[i] < 99) segData[i] = k.age;
+      }
+    });
     const rip = new Float32Array(RIPPLES * 3);
     ripples.forEach((r, i) => { r.age = Math.min(99, r.age + dt); rip.set([r.x, r.y, r.age], i * 3); });
-    const stk = new Float32Array(STRIKES * 4);
-    strikes.forEach((k, i) => { k.age = Math.min(99, k.age + dt); stk.set([k.x, k.y, k.seed, k.age], i * 4); });
     const pil = new Float32Array(SPAWNS * 4);
     spawned.forEach((q, i) => { q.age = Math.min(99, q.age + dt); pil.set([q.x, q.y, q.age, q.seed], i * 4); });
     if (touch.down) {
@@ -615,7 +717,6 @@ void main(){
       light.y += (touch.y - light.y) * k;
     }
 
-    resize();
     const liquid = style.prog === 'liquid';
     if (liquid) stepTrail();
 
@@ -631,10 +732,14 @@ void main(){
     gl.uniform3fv(U.uCols, cols);
     gl.uniform3f(U.uTouch, touch.x, touch.y, touch.z);
     gl.uniform3fv(U.uRip, rip);
-    gl.uniform4fv(U.uStrikes, stk);
-    gl.uniform3f(U.uDir, drag.x, drag.y, Math.min(1, drag.amount));
     gl.uniform4fv(U.uPills, pil);
     gl.uniform2f(U.uLight, light.x, light.y);
+    if (storm) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, segTex);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, MAXSEG, 2, gl.RGBA, gl.FLOAT, segData);
+      gl.uniform1i(U.uSegs, 0);
+    }
     if (liquid) {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, trail.tex[trail.read]);
