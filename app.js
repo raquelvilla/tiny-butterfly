@@ -1,6 +1,7 @@
 // Tiny Butterfly — state, storage and UI for Today, Palettes and Visual.
 (() => {
   const KEY = 'tinyButterfly.v1';
+  const LILAC = '#C9B6F2'; // the picker's starting colour, and the accent when there's none yet
   const $ = (s) => document.querySelector(s);
   const el = (tag, props = {}, ...kids) => {
     const n = Object.assign(document.createElement(tag), props);
@@ -52,7 +53,7 @@
 
   function setAccent(hex) {
     const root = document.documentElement.style;
-    root.setProperty('--accent', hex || '#E4572E');
+    root.setProperty('--accent', hex || LILAC);
     root.setProperty('--accent-ink', hex ? Color.readableInk(hex) : '#FFFFFF');
   }
 
@@ -101,7 +102,7 @@
     $('#swatchEmpty').hidden = !!hex;
     $('#dayLabel').textContent = isToday ? 'Today' : fmtDay(editing);
     $('#hexEcho').textContent = hex || '';
-    if (hex) $('#colorPick').value = hex.toLowerCase();
+    $('#colorPick').value = (hex || LILAC).toLowerCase();
     setAccent(hex || state.days[todayKey()]?.hex);
 
     const saved = state.days[editing];
