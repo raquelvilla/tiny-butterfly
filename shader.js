@@ -277,12 +277,14 @@ void main(){
   }
 
   // God rays: walk toward the sun through the front layer; open sky lets light through.
+  // 24 samples, each pixel starting at a random offset so leftover stepping becomes fine grain.
   float open = 0.;
-  for (int i = 0; i < 10; i++) {
-    vec2 sp = p + toL * (float(i) + .5) / 10.;
+  float jitter = hash(gl_FragCoord.xy + fract(t) * 37.);
+  for (int i = 0; i < 24; i++) {
+    vec2 sp = p + toL * (float(i) + jitter) / 24.;
     open += 1. - density(sp * 3.8 + vec2(7.3, 3.1), t * 1.6, 3.);
   }
-  open /= 10.;
+  open /= 24.;
   float rays = pow(open, 3.) * exp(-dist * 1.6);
   col += sunCol * rays * .4 * (1. - cover * .5);
   // the sun itself: a soft bright disc that shows through thin cloud and dims behind thick
