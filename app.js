@@ -12,7 +12,7 @@
   // ---- state --------------------------------------------------------------
   // { days: { 'YYYY-MM-DD': { hex, note, at } (older entries may also carry a pantone) },
   //   palettes: [{ id, name, dates: [...], source: 'manual'|'harmony', createdAt }],
-  //   lastVisual: paletteId | null, lastStyle: 'liquid'|'storm'|'clouds'|'vapour' }
+  //   lastVisual: paletteId | null, lastStyle: 'liquid'|'storm'|'clouds'|'vapour'|'mist'|'threads' }
   let state = load();
 
   function load() {

@@ -19,6 +19,11 @@ A colour a day, folded into palettes and liquid light.
     self-shadowed with glowing edges, a sun with a hot core, and god rays. Your finger moves the sun.
   - **vapour**: little glowing hearts sublimating into fibrous vapour on black, like dry ice, coloured
     like heat through your palette. Tap to drop a heart; drag to carry it and stream its vapour behind.
+  - **mist**: a steamy bathroom mirror. Soft, pale pools of your palette blend behind fogged glass,
+    water beads on it (each a tiny lens), drops now and then slide down leaving clear wakes, and wisps
+    of vapour drift across. Draw in the mist with your finger: the stroke wipes the glass clear, the
+    water you pushed aside gathers as fine beads along its edges and drips run down from it, clearing
+    trails. It all slowly fogs back over.
   - **threads**: a bezier pen. Tap to place points (tap and drag to pull out their handles), drag a
     point to move it, drag a handle to bend the curve, double-tap a point to remove it. The curve is a
     fine glowing line in your palette with a light travelling along it; the points and handles fade

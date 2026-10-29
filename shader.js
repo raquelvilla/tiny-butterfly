@@ -23,6 +23,7 @@ const Visual = (() => {
   const VAPOUR_SCALE = 0.8; // vapour buffer resolution relative to the canvas (higher = finer fibres)
   const ICE_LIFE = 12;      // seconds a dropped piece takes to sublimate away
   const VAPOUR_LIFE = 2.5;  // seconds a wisp of vapour lives before it's gone
+  const WIPE = 0.06;        // mist: how wide your finger wipes the glass, in screen heights
 
   const STYLES = {
     liquid: { prog: 'liquid', speed: 0.3, warp: 2.6, bright: 1.0 },
@@ -30,6 +31,7 @@ const Visual = (() => {
     clouds: { prog: 'clouds', speed: 0.12, warp: 0, bright: 1.0 },
     vapour: { prog: 'vapour', speed: 1, warp: 0, bright: 1.0 },
     threads: { prog: 'threads', speed: 1, warp: 0, bright: 1.0 },
+    mist: { prog: 'mist', speed: 1, warp: 0, bright: 1.0 },
   };
 
   const VERT = `attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}`;
@@ -70,9 +72,9 @@ void main(){
     float blur = v * .2;
     for (int i = 0; i < 8; i++) {
       float a = float(i) * .7854 + .39;
-      blur += texture2D(uPrev, uv + vec2(cos(a), sin(a)) * uTexel * 1.9).r * .1;
+      blur += texture2D(uPrev, uv + vec2(cos(a), sin(a)) * uTexel * 2.4).r * .1;
     }
-    v = max(v * .97, blur * 1.004);
+    v = max(v * .97, blur * 1.009);
     v = max(v * .99 - .002, 0.);     // the subtraction makes sure 8-bit values reach zero
   }
   vec2 asp = vec2(uSize.x / uSize.y, 1.);
@@ -87,6 +89,47 @@ void main(){
   v = max(v, stamp);
   h = mix(h, uPress, stamp);                      // the stroke pushes the water in a pulse
   gl_FragColor = vec4(v, clamp(h * .5 + .5, 0., 1.), clamp(hp * .5 + .5, 0., 1.), 1.);
+}`;
+
+  // Mist's fogged glass. R = how fogged (1 = fully): it slowly fogs back up, the finger wipes it clear.
+  // G = water the finger pushed aside: it gathers in a ridge along the edges of each stroke and slowly
+  // evaporates. B = drips: water from the bottom of a ridge runs down, clearing a trail as it goes.
+  const FOG = `
+precision highp float;
+uniform sampler2D uPrev;
+uniform vec2 uSize, uTexel, uA, uB;
+uniform float uOn, uR, uDt;
+float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+void main(){
+  vec2 uv = gl_FragCoord.xy / uSize;
+  vec4 c = texture2D(uPrev, uv);
+  float v = c.r, g = c.g, b = c.b;
+  if (uOn < .5) {
+    // soften the edges of a wipe a little, then fog back over in ~7s
+    float n = texture2D(uPrev, uv + vec2(uTexel.x, 0.)).r + texture2D(uPrev, uv - vec2(uTexel.x, 0.)).r
+            + texture2D(uPrev, uv + vec2(0., uTexel.y)).r + texture2D(uPrev, uv - vec2(0., uTexel.y)).r;
+    v = mix(v, n * .25, .25);
+    v = min(1., v + uDt * .14);
+    g = max(g - uDt * .05, 0.);                   // the ridge slowly evaporates
+    // drips: carried down from the texel above, slowing and thinning as they go
+    float above = texture2D(uPrev, uv + vec2(0., uTexel.y * 1.5)).b;
+    b = max(b * .9, above * .992);
+    // only some columns drip, and only from where the ridge is heavy with water below a clear stroke
+    float colId = floor(uv.x / uTexel.x / 3.);
+    float heavy = smoothstep(.55, .9, g) * step(.86, hash(vec2(colId, 3.1)));
+    float clearAbove = 1. - texture2D(uPrev, uv + vec2(0., uTexel.y * 6.)).r;
+    b = max(b, heavy * step(.5, clearAbove));
+    v = min(v, 1. - b * .9);                      // a running drip clears a trail behind it
+  }
+  vec2 asp = vec2(uSize.x / uSize.y, 1.);
+  vec2 p = uv * asp, a = uA * asp, bb = uB * asp, pa = p - a, ba = bb - a;
+  float d = length(pa - ba * clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0., 1.));
+  float wipe = uOn * smoothstep(uR, uR * .35, d);
+  float ridge = uOn * smoothstep(uR * .7, uR * 1.05, d) * smoothstep(uR * 1.6, uR * 1.1, d);
+  v = min(v, 1. - wipe);
+  g = max(g * (1. - wipe), ridge);                // water is swept out of the stroke onto its edges
+  b *= 1. - wipe;
+  gl_FragColor = vec4(v, g, b, 1.);
 }`;
 
   const COMMON = `
@@ -403,6 +446,87 @@ void main(){
   gl_FragColor = vec4(finish(col, .3, .025), 1.);
 }`,
 
+    // A steamy bathroom mirror: soft, pale palette colours blending behind fogged glass. Water beads
+    // on the glass (each a tiny lens), now and then one slides down and leaves a clear trail, and wisps
+    // of vapour drift across. Your finger wipes the fog away; it slowly mists back over.
+    mist: `
+uniform sampler2D uTrail;   // the fog buffer (see FOG)
+// The colours behind the glass; fewer octaves = blurrier.
+vec3 behind(vec2 p, float oct){
+  float t = uTime;
+  float f = fbm(p * 1.5 + vec2(t * .035, t * .02), oct);
+  float g = fbm(p * 2.1 - vec2(t * .03, -t * .015) + 3.1, oct);
+  vec3 c = palette(.5 + .5 * sin((f * 1.4 + g) * 7. + t * .05)); // cycles through every colour, in soft pools
+  return mix(c, vec3(1.), .28);
+}
+// One layer of water on the glass, in cells of 1/scale screen heights.
+// Returns xy = refraction (how the water bends what's behind), z = how much is water, w = clear trail.
+vec4 water(vec2 p, float t, float scale, float seed, float dens, float slide){
+  vec4 o = vec4(0.);
+  // beads sitting still
+  vec2 q = p * scale, id = floor(q), f = fract(q) - .5;
+  float h = hash(id + seed);
+  vec2 c = (vec2(hash(id + seed + 1.3), hash(id + seed + 7.1)) - .5) * .55;
+  float r = mix(.07, .26, hash(id + seed + 3.7) * hash(id + seed + 9.2));
+  float bead = smoothstep(1., .7, length(f - c) / r) * step(1. - dens, h);
+  o.xy += (f - c) / r * bead;
+  o.z = bead;
+  // a drop sliding down each column now and then, leaving a clear wake with little beads in it
+  float cw = 2.6 / scale, col = floor(p.x / cw), ch = hash(vec2(col, seed + 11.));
+  if (slide > .5 && ch > .62) {
+    float speed = mix(.04, .12, hash(vec2(col, seed + 5.)));
+    float y = 1.15 - fract(t * speed + ch * 7.) * 1.4;
+    float wob = sin(p.y * 23. + ch * 40.) * .25 + sin(p.y * 9. + ch * 13.) * .35;
+    float x = (col + .5 + wob * .3) * cw;
+    float R = cw * .14;
+    vec2 d = (p - vec2(x, y)) / vec2(R, R * 1.3);
+    float drop = smoothstep(1., .75, length(d));
+    o.xy += d * drop * 1.3;
+    o.z = max(o.z, drop);
+    float wake = smoothstep(R * .75, R * .15, abs(p.x - x)) * step(y, p.y) * exp(-(p.y - y) * 4.);
+    o.w = wake;
+    vec2 wq = vec2(p.x / (R * .9), p.y * scale * 2.6);
+    vec2 wf = fract(wq) - .5;
+    float wb = smoothstep(.3, .18, length(wf)) * wake * step(.55, hash(floor(wq) + col));
+    o.xy += wf * wb;
+    o.z = max(o.z, wb);
+  }
+  return o;
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 asp = vec2(uRes.x / uRes.y, 1.);
+  vec2 p = uv * asp;
+  vec4 F = texture2D(uTrail, uv);
+  float onFog = smoothstep(.35, .85, F.r);                 // beads only sit on fogged glass
+  vec4 a = water(p, uTime, 26., 0., .42 * onFog, 1.);
+  vec4 b = water(p + 7.3, uTime * 1.2, 52., 4.2, .42 * onFog, 1.);
+  vec4 e = water(p + 3.1, 0., 95., 8.6, smoothstep(.1, .9, F.g) * .85, 0.); // fine beads on the ridge you drew
+  // drips: a soft bead at the running front, its slope bending what's behind
+  vec2 T = 1. / uRes * 2.;
+  vec2 dg = vec2(texture2D(uTrail, uv + vec2(T.x, 0.)).b - texture2D(uTrail, uv - vec2(T.x, 0.)).b,
+                 texture2D(uTrail, uv + vec2(0., T.y)).b - texture2D(uTrail, uv - vec2(0., T.y)).b);
+  float drip = smoothstep(.35, .8, F.b);
+  float wet = max(max(a.z, b.z * .8), max(e.z, drip));
+  vec2 bend = a.xy / 26. + b.xy / 52. * .7 + e.xy / 95. * .7 - dg * .02;
+  float fog = F.r * (1. - max(max(a.w, b.w * .7), wet));
+
+  vec3 clear = behind(p - bend * 3., 4.);           // through clear glass and water: crisp and richer
+  clear = mix(vec3(dot(clear, vec3(.33))), clear, 1.25);
+  vec3 misted = mix(behind(p, 1.6), vec3(1.), .4);   // through fog: blurred, pale and milky
+  float w = fbm(p * 2.3 + vec2(uTime * .07, uTime * .025), 3.);
+  float w2 = fbm(p * 5. - vec2(uTime * .05, 0.) + 9., 2.);
+  misted += (w - .5) * .14 + (w2 - .5) * .05;        // wisps drifting in the steam
+  vec3 col = mix(clear, misted, fog);
+
+  // water catches the light from the top left, with a soft darker rim
+  vec3 n = normalize(vec3(-a.xy - b.xy * .6 - e.xy * .6 + dg * 6., 1.2));
+  float spec = pow(clamp(dot(reflect(-normalize(vec3(-.4, .6, .7)), n), vec3(0., 0., 1.)), 0., 1.), 24.);
+  col *= 1. - .06 * smoothstep(.2, .9, length(a.xy)) * a.z;
+  col += spec * wet * .55;
+  gl_FragColor = vec4(finish(col, .12, .015), 1.);
+}`,
+
     // One step of the vapour simulation: carry last frame's vapour along a swirling flow (curl noise,
     // a gentle rise, and a push outward from each piece), fade it, and emit new fibres around each
     // piece. Fibres are angular noise around the core, so they stream out as hair-like strands.
@@ -454,6 +578,7 @@ void main(){
   let canvas, gl;
   const programs = {};
   let trailProg = null;
+  let fog = null, fogProg = null; // mist's fogged glass
   let trail = null; // { w, h, tex: [a, b], fb: [a, b], read: 0 }
   let vapour = null, vapourProg = null;
   let clock = 0;    // real seconds since start (vapour's flow shouldn't depend on style speed)
@@ -465,7 +590,7 @@ void main(){
   const cur = { speed: style.speed, warp: style.warp, bright: style.bright };
   const touch = { x: 0.5, y: 0.5, z: 0, down: 0, id: null };
   const path = []; // finger points [x, y, brush radius] not yet stamped (capped so a stall can't pile up)
-  const brushAt = () => BRUSH * 0.75; // constant; the trail itself spreads as it ages (see TRAIL)
+  const brushAt = () => BRUSH * 0.95; // constant; the trail itself spreads as it ages (see TRAIL)
   const strikes = Array.from({ length: STRIKES }, () => ({ age: 99 }));
   let strikeAt = 0;
   const segData = new Float32Array(MAXSEG * 2 * 4); // the uSegs texture's contents
@@ -631,6 +756,36 @@ void main(){
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
+  // Mist: fog the glass back up a little, then wipe along the finger's path since the last frame.
+  function stepFog(dt) {
+    fog = pingPong(fog, 0.5, [1, 0, 0, 1], true); // starts fully fogged
+    const { prog, U } = fogProg;
+    gl.viewport(0, 0, fog.w, fog.h);
+    gl.useProgram(prog);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(U.uPrev, 0);
+    gl.uniform2f(U.uSize, fog.w, fog.h);
+    gl.uniform2f(U.uTexel, 1 / fog.w, 1 / fog.h);
+    gl.uniform1f(U.uDt, dt);
+    gl.uniform1f(U.uR, WIPE);
+    const pass = (a, b, on) => {
+      const write = 1 - fog.read;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fog.fb[write]);
+      gl.bindTexture(gl.TEXTURE_2D, fog.tex[fog.read]);
+      gl.uniform2f(U.uA, a[0], a[1]);
+      gl.uniform2f(U.uB, b[0], b[1]);
+      gl.uniform1f(U.uOn, on ? 1 : 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      fog.read = write;
+    };
+    const pts = path.splice(0);
+    pass([0, 0], [0, 0], false);
+    if (pts.length === 1 && touch.down) pass(pts[0], pts[0], true);
+    for (let i = 1; i < pts.length; i++) pass(pts[i - 1], pts[i], true);
+    if (touch.down) path.push(pts.length ? pts[pts.length - 1] : [touch.x, touch.y]);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
   function init(c) {
     canvas = c;
     gl = c.getContext('webgl', { preserveDrawingBuffer: true, antialias: false, alpha: false });
@@ -641,6 +796,7 @@ void main(){
       gl.enableVertexAttribArray(0);
       gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
       trailProg = link(TRAIL, ['uPrev', 'uSize', 'uTexel', 'uA', 'uB', 'uOn', 'uR', 'uDecay', 'uPress']);
+      fogProg = link(FOG, ['uPrev', 'uSize', 'uTexel', 'uA', 'uB', 'uOn', 'uR', 'uDt']);
       program('liquid');
       Threads.init();
     } catch (err) {
@@ -916,6 +1072,8 @@ void main(){
     ice.forEach((k) => { if (!k.auto) k.age = Math.min(99, k.age + dt); });
     const liquid = style.prog === 'liquid';
     if (liquid) stepTrail();
+    const mist = style.prog === 'mist';
+    if (mist) stepFog(dt);
     const vap = style.prog === 'vapour';
     const src = vap ? iceSources() : null;
     if (vap) stepVapour(dt, src);
@@ -944,6 +1102,11 @@ void main(){
       gl.bindTexture(gl.TEXTURE_2D, segTex);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, MAXSEG, 2, gl.RGBA, gl.FLOAT, segData);
       gl.uniform1i(U.uSegs, 0);
+    }
+    if (mist) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, fog.tex[fog.read]);
+      gl.uniform1i(U.uTrail, 0);
     }
     if (liquid) {
       gl.activeTexture(gl.TEXTURE0);
