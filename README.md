@@ -28,7 +28,7 @@ A colour a day, folded into palettes and liquid light.
     point to move it, drag a handle to bend the curve, double-tap a point to remove it. The curve is a
     fine glowing line in your palette with a light travelling along it; the points and handles fade
     away after a few seconds so you're left with just the line. Your curve is remembered.
-  - **candles**: an abstraction of a birthday: only flames, in the dark. Tap to light a flame wherever
+  - **birthdays**: an abstraction of a birthday: only flames, in the dark. Tap to light a flame wherever
     you touch; drag to blow, and flames lean away from your breath while the nearest go out with a
     curl of smoke. Flames crowded together merge into one bigger, brighter, taller fire: the more you
     light, the more it all burns. Your palette tints the firelight.
