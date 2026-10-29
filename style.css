@@ -278,15 +278,6 @@ body.visual-on .top, body.visual-on .tabs { display: none; }
 }
 .seg button.on { background-color: #FFF; color: #111; box-shadow: 0 1px 6px rgba(0, 0, 0, .1); }
 .vis-btns { display: flex; gap: 6px; }
-.count {
-  display: flex; align-items: center; gap: 6px; padding: 0 14px 0 6px; height: 36px;
-  background: rgba(0, 0, 0, .06); border-radius: 999px; font-size: 14px; color: rgba(0, 0, 0, .55);
-}
-.count input {
-  width: 46px; border: 0; background: #FFF; border-radius: 999px; padding: 5px 0; text-align: center;
-  font: 400 14px var(--sans); color: #111; outline: none; -moz-appearance: textfield;
-}
-.count input::-webkit-inner-spin-button, .count input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .round {
   width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 15px;
   border: 0; background: rgba(0, 0, 0, .06); color: #111;

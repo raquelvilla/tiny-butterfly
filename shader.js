@@ -416,13 +416,44 @@ void main(){
   gl_FragColor = vec4(finish(col, .25, .02), 1.);
 }`,
 
-    // The cake candles.js drew (uTrail), with the flames' warm glow (uVap) blurred out over the room.
+    // Fire from the heat candles.js painted (uTrail: R = heat, G = smoke). Rising turbulence makes the
+    // heat lick upward in ragged tongues; a fire ramp (deep red, orange, gold, white-hot) colours it, so
+    // where many flames' heat piles up they merge and burn brighter. Plus a warm glow (uVap) over the dark.
     candles: `
 uniform sampler2D uTrail, uVap;
 uniform vec2 uTexel;   // one texel of the small glow layer
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
-  vec3 scene = texture2D(uTrail, uv).rgb;
+  vec2 asp = vec2(uRes.x / uRes.y, 1.);
+  vec2 p = uv * asp;
+  float n1 = fbm(p * vec2(7., 3.2) - vec2(0., uTime * 1.9), 3.);
+  float n2 = fbm(p * vec2(16., 7.) - vec2(0., uTime * 3.2) + 4.2, 2.);
+  // sample the heat below and to the side: what's drawn rises in tongues and flickers sideways
+  vec2 off = vec2((n1 - .5) * .022 + (n2 - .5) * .009, -(n1 * .04 + n2 * .012));
+  float own = texture2D(uTrail, uv + off).r;
+  // the flames' shared heat (the blurred glow layer): sparse flames barely touch it, a crowd of
+  // them piles it up into one body of fire
+  // the more heat has gathered here, the higher the merged fire climbs (big fires burn taller)
+  float pile = texture2D(uVap, uv - vec2(0., .04)).r;
+  vec2 off2 = off * 2.2 - vec2(0., smoothstep(.15, .8, pile) * .07);
+  float shared = 0.;
+  for (int i = 0; i < 8; i++) {
+    float a = float(i) * .785;
+    shared += texture2D(uVap, uv + off2 + vec2(cos(a), sin(a)) * uTexel * 1.2).r;
+  }
+  shared /= 8.;
+  // heat is stored gently (so a crowd doesn't max it out) and stretched here
+  float h = (own * 1.6 + smoothstep(.12, .75, shared) * .55) * (.6 + .75 * n2);  // ragged, licking edges
+  float smoke = texture2D(uTrail, uv + off * .6).g;
+
+  vec3 tint = palette(1.);
+  vec3 c = vec3(0.);
+  c = mix(c, vec3(.42, .05, .02), smoothstep(.05, .22, h));
+  c = mix(c, vec3(1., .4, .08), smoothstep(.18, .48, h));
+  c = mix(c, vec3(1., .78, .32), smoothstep(.42, .95, h));
+  c = mix(c, vec3(1., .97, .86), smoothstep(1.25, 2.1, h));   // white only in the very hottest heart
+  c *= mix(vec3(1.), tint * 1.15, .18);                          // a touch of your palette in the fire
+
   vec3 g = texture2D(uVap, uv).rgb * 2.;
   float wsum = 2.;
   for (int i = 0; i < 12; i++) {
@@ -433,10 +464,11 @@ void main(){
       wsum += w;
     }
   }
-  g /= wsum;
-  vec3 col = scene + g * .9;
-  col = col / (1. + max(col - .9, 0.) * .8);   // flames bloom without clipping hard
-  gl_FragColor = vec4(finish(col, .35, .02), 1.);
+  float glow = (g / wsum).r;
+  vec3 warm = mix(vec3(1., .5, .18), tint, .3);
+  vec3 col = c + warm * glow * .7 + vec3(.55, .52, .5) * smoke * .3;
+  col = col / (1. + max(col - .9, 0.) * .8);
+  gl_FragColor = vec4(finish(col, .4, .02), 1.);
 }`,
 
     // The lines threads.js drew (uTrail), over a soft glow blurred from its small copy (uVap).
@@ -841,7 +873,6 @@ void main(){
 
   // Styles drawn in 2D (threads, candles) and composited here.
   const painter = () => (style.prog === 'threads' ? Threads : style.prog === 'candles' ? Candles : null);
-  const setCandles = (n) => Candles.setCount(n);
 
   function uploadThreads(src) {
     if (!threadTex) {
@@ -1156,5 +1187,5 @@ void main(){
 
   const snapshot = () => new Promise((res) => (canvas ? canvas.toBlob(res, 'image/png') : res(null)));
 
-  return { init, start, stop, setPalette, setStyle, setCandles, snapshot, styles: Object.keys(STYLES) };
+  return { init, start, stop, setPalette, setStyle, snapshot, styles: Object.keys(STYLES) };
 })();
