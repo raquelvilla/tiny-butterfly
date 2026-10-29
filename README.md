@@ -21,7 +21,8 @@ A colour a day, folded into palettes and liquid light.
     like heat through your palette. Tap to drop a heart; drag to carry it and stream its vapour behind.
   - **mist**: a steamy bathroom mirror. Soft, pale pools of your palette blend behind fogged glass,
     water beads on it (each a tiny lens), drops now and then slide down leaving clear wakes, and wisps
-    of vapour drift across. Draw in the mist with your finger: the stroke wipes the glass clear, the
+    of vapour drift across. Draw in the mist with your finger: the stroke wipes the glass clear and dry (every drop it
+    touches is gone, and they only slowly come back), the
     water you pushed aside gathers as fine beads along its edges, with the odd small trickle just
     after you draw. It all slowly fogs back over.
   - **threads**: a bezier pen. Tap to place points (tap and drag to pull out their handles), drag a

@@ -94,6 +94,7 @@ void main(){
   // Mist's fogged glass. R = how fogged (1 = fully): it slowly fogs back up, the finger wipes it clear.
   // G = water the finger pushed aside: it gathers in a ridge along the edges of each stroke and slowly
   // evaporates. B = drips: water from the bottom of a ridge runs down, clearing a trail as it goes.
+  // A = how wet the glass is: wiping dries it, so no drops sit or slide there until it slowly re-wets.
   const FOG = `
 precision highp float;
 uniform sampler2D uPrev;
@@ -103,7 +104,7 @@ float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32);
 void main(){
   vec2 uv = gl_FragCoord.xy / uSize;
   vec4 c = texture2D(uPrev, uv);
-  float v = c.r, g = c.g, b = c.b;
+  float v = c.r, g = c.g, b = c.b, w = c.a;
   if (uOn < .5) {
     // soften the edges of a wipe a little, then fog back over in ~7s
     float n = texture2D(uPrev, uv + vec2(uTexel.x, 0.)).r + texture2D(uPrev, uv - vec2(uTexel.x, 0.)).r
@@ -111,6 +112,7 @@ void main(){
     v = mix(v, n * .25, .25);
     v = min(1., v + uDt * .14);
     g = max(g - uDt * .05, 0.);                   // the ridge slowly evaporates
+    w = min(1., w + uDt * .05);                   // the glass re-wets over ~20s
     // drips: carried down from the texel above, slowing and thinning as they go
     float above = texture2D(uPrev, uv + vec2(0., uTexel.y * 1.5)).b;
     b = max(b * .85, above * .965);              // short runs that soon stop
@@ -129,7 +131,8 @@ void main(){
   v = min(v, 1. - wipe);
   g = max(g * (1. - wipe), ridge);                // water is swept out of the stroke onto its edges
   b *= 1. - wipe;
-  gl_FragColor = vec4(v, g, b, 1.);
+  w = min(w, 1. - wipe);
+  gl_FragColor = vec4(v, g, b, w);
 }`;
 
   const COMMON = `
@@ -473,17 +476,17 @@ vec4 water(vec2 p, float t, float scale, float seed, float dens, float slide){
   o.z = bead;
   // a drop sliding down each column now and then, leaving a clear wake with little beads in it
   float cw = 2.6 / scale, col = floor(p.x / cw), ch = hash(vec2(col, seed + 11.));
-  if (slide > .5 && ch > .62) {
+  if (slide > .01 && ch > .62) {
     float speed = mix(.04, .12, hash(vec2(col, seed + 5.)));
     float y = 1.15 - fract(t * speed + ch * 7.) * 1.4;
     float wob = sin(p.y * 23. + ch * 40.) * .25 + sin(p.y * 9. + ch * 13.) * .35;
     float x = (col + .5 + wob * .3) * cw;
     float R = cw * .14;
     vec2 d = (p - vec2(x, y)) / vec2(R, R * 1.3);
-    float drop = smoothstep(1., .75, length(d));
+    float drop = smoothstep(1., .75, length(d)) * slide;
     o.xy += d * drop * 1.3;
     o.z = max(o.z, drop);
-    float wake = smoothstep(R * .75, R * .15, abs(p.x - x)) * step(y, p.y) * exp(-(p.y - y) * 4.);
+    float wake = smoothstep(R * .75, R * .15, abs(p.x - x)) * step(y, p.y) * exp(-(p.y - y) * 4.) * slide;
     o.w = wake;
     vec2 wq = vec2(p.x / (R * .9), p.y * scale * 2.6);
     vec2 wf = fract(wq) - .5;
@@ -498,9 +501,9 @@ void main(){
   vec2 asp = vec2(uRes.x / uRes.y, 1.);
   vec2 p = uv * asp;
   vec4 F = texture2D(uTrail, uv);
-  float onFog = smoothstep(.35, .85, F.r);                 // beads only sit on fogged glass
-  vec4 a = water(p, uTime, 26., 0., .42 * onFog, 1.);
-  vec4 b = water(p + 7.3, uTime * 1.2, 52., 4.2, .42 * onFog, 1.);
+  float onGlass = smoothstep(.25, .95, F.a);              // where you've wiped, the glass is dry: no drops
+  vec4 a = water(p, uTime, 26., 0., .42 * onGlass, onGlass);
+  vec4 b = water(p + 7.3, uTime * 1.2, 52., 4.2, .42 * onGlass, onGlass);
   vec4 e = water(p + 3.1, 0., 95., 8.6, smoothstep(.1, .9, F.g) * .85, 0.); // fine beads on the ridge you drew
   // drips: a soft bead at the running front, its slope bending what's behind
   vec2 T = 1. / uRes * 2.;
