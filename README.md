@@ -7,13 +7,15 @@ A colour a day, folded into palettes and liquid light.
 - **Palettes**: tap 3–6 of your colours to make a palette. Stuck? **✦ Inspire me** finds palettes in
   your own colours using colour harmony (analogous, complementary, triadic, split-complementary,
   tetradic). Tap a colour in a suggestion to swap it. *Keep* saves it, and *Tweak* opens it in the builder.
-- **Visual**: a palette becomes a full-screen shader. Drag to swirl it, tap 🎙 to make it react to sound,
-  and tap ◎ to save a still. The styles are:
-  - **calm**: soft colour clouds drifting very slowly
-  - **liquid** / **storm**: domain-warped noise, gentle or wild
-  - **ribs**: vertical stripes, each a slice of the palette from dark to light
+- **Visual**: a palette becomes a full-screen shader. Tap 🎙 to make it react to sound, and tap ◎ to
+  save a still. Each style answers touch in its own way:
+  - **calm**: soft colour clouds drifting very slowly. The nearest cloud comes to your finger.
+  - **liquid** / **storm**: domain-warped noise, gentle or wild. Taps ripple out, and drags leave a wake.
+  - **ribs**: vertical stripes, each a slice of the palette from dark to light. Holding breaks them
+    into stepped tiles that heal when you let go. Dragging sideways adds or removes ribs.
   - **glass**: a gradient seen through a strip of fluted glass that follows your finger
-  - **pills**: columns of glowing ellipses on charcoal that swell like an equaliser (try the mic)
+  - **pills**: columns of glowing ellipses on charcoal that swell like an equaliser (try the mic).
+    No touch effect yet.
 
 ## Run it
 
