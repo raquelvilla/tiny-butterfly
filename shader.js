@@ -319,7 +319,13 @@ uniform vec2 uLight;   // sun position, uv
 float density(vec2 q, float t, float oct){
   float f = fbm(q + vec2(t * .6, t * .1), oct);
   float g = fbm(q * 2.3 - vec2(t * .3, 0.), max(oct - 2., 1.));
-  return smoothstep(.47, .66, f * .75 + g * .35);
+  float e = noise(q * 9. + vec2(t, 0.));                       // fine erosion at the edges
+  return smoothstep(.48, .62, f * .75 + g * .35 - (e - .5) * .06);
+}
+// Filmic tone curve (ACES approximation): rolls highlights off like a camera instead of clipping.
+vec3 filmic(vec3 x){
+  x *= .9;
+  return clamp((x * (2.51 * x + .03)) / (x * (2.43 * x + .59) + .14), 0., 1.);
 }
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
@@ -329,28 +335,29 @@ void main(){
   vec2 toL = lp - p;
   float dist = length(toL);
   float calm = smoothstep(0., .28, dist);        // 0 at the sun, 1 away from it
-  float oct = mix(2., 6., calm);                 // softer, blurrier clouds near the sun
+  float oct = mix(3., 7., calm);                 // softer, blurrier clouds near the sun
   vec2 toSun = toL / max(dist, 1e-4);
 
-  vec3 col = mix(palette(.45), palette(.12), uv.y) * .85;
-  float sun = exp(-dist * dist * 6.);
-  col += palette(1.) * sun * .6;
-  vec3 litCol = mix(palette(.85), vec3(1.), .6);
-  vec3 shadowCol = mix(palette(.4), litCol, .45);
+  vec3 sky = mix(palette(.45), palette(.12), uv.y);
+  vec3 col = mix(sky, vec3(dot(sky, vec3(.3, .59, .11))), .3) * .8;   // a little desaturated, like a photo
+  float sun = exp(-dist * dist * 9.);
+  col += palette(1.) * sun * .35;
+  vec3 litCol = mix(palette(.85), vec3(1.), .55);
+  vec3 shadowCol = mix(palette(.25), litCol, .3) * .75;
   float cover = 0.;
   for (int L = 0; L < 2; L++) {
     float fl = float(L);
-    float sc = mix(1.6, 2.4, fl);
+    float sc = mix(2.6, 3.8, fl);
     vec2 q = p * sc + vec2(fl * 7.3, fl * 3.1);
     float tt = t * (1. + fl * .6);
     float d = density(q, tt, oct);
     if (d < .001) continue;
     float acc = 0.;
-    float stepLen = sc * .05 * calm;             // shadow steps fade out at the sun
+    float stepLen = sc * .035 * calm;            // shadow steps fade out at the sun
     for (int i = 1; i <= 4; i++) acc += density(q + toSun * stepLen * float(i), tt, oct);
-    float lit = exp(-acc * .8);
+    float lit = exp(-acc * 1.05);
     float rim = (1. - d) * lit;
-    vec3 c = mix(shadowCol, litCol, lit) + palette(1.) * rim * sun * 1.5 + rim * .15;
+    vec3 c = mix(shadowCol, litCol, lit) + palette(1.) * rim * sun * .8 + rim * .06;
     float alpha = d * mix(.85, .97, fl);
     col = mix(col, c, alpha);
     cover = max(cover, alpha);
@@ -360,13 +367,13 @@ void main(){
   float open = 0.;
   for (int i = 0; i < 10; i++) {
     vec2 sp = p + toL * (float(i) + .5) / 10.;
-    open += 1. - density(sp * 2.4 + vec2(7.3, 3.1), t * 1.6, 3.);
+    open += 1. - density(sp * 3.8 + vec2(7.3, 3.1), t * 1.6, 3.);
   }
   open /= 10.;
   float rays = pow(open, 3.) * exp(-dist * 1.6);
-  col += mix(palette(1.), vec3(1.), .5) * rays * .45 * (1. - cover * .6);
-  col += palette(1.) * exp(-dist * dist * 40.) * .25;   // soft bright core
-  gl_FragColor = vec4(finish(col, .15, .02), 1.);
+  col += mix(palette(1.), vec3(1.), .5) * rays * .28 * (1. - cover * .6);
+  col += palette(1.) * exp(-dist * dist * 60.) * .12;   // soft bright core
+  gl_FragColor = vec4(finish(filmic(col * 1.15), .2, .018), 1.);
 }`,
   };
 
