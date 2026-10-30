@@ -12,7 +12,9 @@
   // ---- state --------------------------------------------------------------
   // { days: { 'YYYY-MM-DD': { hex, note, at } (older entries may also carry a pantone) },
   //   palettes: [{ id, name, dates: [...], source: 'manual'|'harmony', createdAt }],
-  //   lastVisual: paletteId | null, lastStyle: 'liquid'|'storm'|'clouds'|'vapour'|'mist'|'threads'|'candles' }
+  //   lastVisual: paletteId | null, lastStyle: 'liquid'|'storm'|'clouds'|'vapour'|'mist'|'threads'|'candles',
+  //   gone: { days: { key: when removed }, palettes: { id: when removed } } }
+  // Palettes also carry updatedAt once edited. `gone` remembers removals so syncing can't bring them back.
   let state = load();
 
   function load() {
@@ -28,6 +30,79 @@
     } catch {
       toast('Could not save on this device');
     }
+    if (onMac) schedulePush();
+  }
+
+  // ---- keeping your colours on your Mac ----------------------------------------
+  // Opened from the Mac (localhost) or over Tailscale, serve.py keeps everything in data.json, so every
+  // device of yours shares one notebook. Anywhere else (GitHub Pages, for friends) there's no /api/data
+  // and the notebook simply stays in this browser.
+  let onMac = false;   // true once the Mac's copy has been read
+  let pushTimer = 0;
+
+  function schedulePush() {
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(push, 400);
+  }
+  async function push() {
+    try {
+      const r = await fetch('api/data', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state),
+      });
+      if (!r.ok) throw new Error(r.status);
+    } catch {
+      // offline: this browser still has it, and it goes up to the Mac on the next sync
+    }
+  }
+  async function sync() {
+    try {
+      const r = await fetch('api/data', { cache: 'no-store' });
+      if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) return;
+      const theirs = await r.json();
+      if (!theirs || typeof theirs.days !== 'object' || !Array.isArray(theirs.palettes)) return;
+      const changed = merge(state, theirs);
+      onMac = true;
+      save(); // keeps the merged notebook here and sends it up, so anything added offline reaches the Mac
+      $('#whereSaved').textContent = 'Your colours are kept on your Mac and shared by your devices. Export a backup now and then too.';
+      if (changed) { openDay(editing); renderPalettes(); }
+    } catch {}
+  }
+
+  // Fold `theirs` into `mine`: the newest version of each day and palette wins, and anything removed
+  // (on either side) after its last change stays removed. Returns whether `mine` changed.
+  function merge(mine, theirs) {
+    let changed = false;
+    const stamp = (p) => p.updatedAt || p.createdAt || '';
+    mine.gone = mine.gone || { days: {}, palettes: {} };
+    const tg = theirs.gone || {};
+    for (const kind of ['days', 'palettes']) {
+      for (const [k, at] of Object.entries(tg[kind] || {})) {
+        if (!(mine.gone[kind][k] >= at)) mine.gone[kind][k] = at;
+      }
+    }
+    for (const [k, d] of Object.entries(theirs.days)) {
+      const m = mine.days[k];
+      if ((!m || (d.at || '') > (m.at || '')) && !((mine.gone.days[k] || '') >= (d.at || ''))) {
+        mine.days[k] = d;
+        changed = true;
+      }
+    }
+    for (const [k, at] of Object.entries(mine.gone.days)) {
+      if (mine.days[k] && (mine.days[k].at || '') <= at) { delete mine.days[k]; changed = true; }
+    }
+    for (const p of theirs.palettes) {
+      if (!p || !p.id) continue;
+      const i = mine.palettes.findIndex((m) => m.id === p.id);
+      if (i < 0) {
+        if (!((mine.gone.palettes[p.id] || '') >= stamp(p))) { mine.palettes.push(p); changed = true; }
+      } else if (stamp(p) > stamp(mine.palettes[i])) {
+        mine.palettes[i] = p;
+        changed = true;
+      }
+    }
+    const before = mine.palettes.length;
+    mine.palettes = mine.palettes.filter((p) => !((mine.gone.palettes[p.id] || '') >= stamp(p)));
+    return changed || mine.palettes.length !== before;
   }
 
   const pad = (n) => String(n).padStart(2, '0');
@@ -148,8 +223,13 @@
       ? `Remove this colour? It's in ${inPalettes} palette${inPalettes > 1 ? 's' : ''} and will leave ${inPalettes > 1 ? 'them' : 'it'}.`
       : 'Remove this colour?';
     if (!confirm(msg)) return;
+    const now = new Date().toISOString();
     delete state.days[editing];
-    for (const p of state.palettes) p.dates = p.dates.filter((d) => d !== editing);
+    state.gone = state.gone || { days: {}, palettes: {} };
+    state.gone.days[editing] = now;
+    for (const p of state.palettes) {
+      if (p.dates.includes(editing)) Object.assign(p, { dates: p.dates.filter((d) => d !== editing), updatedAt: now });
+    }
     save();
     openDay(editing);
   });
@@ -245,6 +325,8 @@
   function removePalette(p) {
     if (!confirm(`Delete “${p.name || 'untitled'}”? Your colours stay in the diary.`)) return;
     state.palettes = state.palettes.filter((x) => x !== p);
+    state.gone = state.gone || { days: {}, palettes: {} };
+    state.gone.palettes[p.id] = new Date().toISOString();
     save();
     renderPalettes();
   }
@@ -299,7 +381,7 @@
   $('#builderCancel').addEventListener('click', () => { $('#builder').hidden = true; });
   $('#builderSave').addEventListener('click', () => {
     const name = $('#paletteName').value.trim();
-    if (builderTarget) Object.assign(builderTarget, { name, dates: [...picked] });
+    if (builderTarget) Object.assign(builderTarget, { name, dates: [...picked], updatedAt: new Date().toISOString() });
     else state.palettes.push({ id: uid(), name, dates: [...picked], source: 'manual', createdAt: new Date().toISOString() });
     save();
     $('#builder').hidden = true;
@@ -529,12 +611,15 @@
   // Roll the editor over to the new day if the app stays open past midnight.
   let lastToday = todayKey();
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible' || todayKey() === lastToday) return;
+    if (document.visibilityState !== 'visible') return;
+    sync(); // pick up anything added on your other devices
+    if (todayKey() === lastToday) return;
     if (editing === lastToday) openDay(todayKey());
     lastToday = todayKey();
   });
 
   openDay(todayKey());
+  sync();
 
   if ('serviceWorker' in navigator && window.isSecureContext) {
     navigator.serviceWorker.register('sw.js').catch(() => {});

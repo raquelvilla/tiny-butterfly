@@ -3,3 +3,6 @@ __pycache__/
 
 # local notes, not part of the app
 .claude/
+data.json
+data.prev.json
+data.json.tmp

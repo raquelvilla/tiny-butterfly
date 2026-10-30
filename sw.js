@@ -20,6 +20,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  if (new URL(e.request.url).pathname.includes('/api/')) return; // your colours always come fresh from the Mac
   e.respondWith(
     fetch(e.request)
       .then((res) => {

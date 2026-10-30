@@ -45,29 +45,33 @@ Or by hand:
 python3 serve.py
 ```
 
-## On your phone
+## Where your colours live
 
-`serve.py` also prints a Wi-Fi address (`http://192.168.x.x:8790`) you can open on your phone.
-Over plain http on Wi-Fi, browsers **block offline install**. Logging colours, palettes and visuals
-all still work. To install it on a phone, it needs https (for example GitHub Pages), which can be
-added later.
+- **Your own copy (from your Mac):** `serve.py` keeps everything in `data.json` in this folder (the previous
+  version in `data.prev.json`; both stay out of git, and the nightly Luna backup copies `data.json`). Open
+  the app at http://localhost:8790 on the Mac, or at **https://<your-mac>.<tailnet>.ts.net:8790** on your
+  phone over Tailscale (private to your devices; add it to the Home Screen). Every device syncs with the
+  Mac: the newest version of each colour wins, removals stay removed, and it keeps working offline.
+  Set up once with `tailscale serve --bg --https=8790 http://localhost:8790`.
+- **For friends:** https://raquelvilla.github.io/tiny-butterfly/ (GitHub Pages, `git push` to update).
+  There's no Mac behind it, so each visitor's colours stay private in their own browser.
 
-Note that each browser keeps its own colours: phone and Mac don't sync. Use ⋯ → Export / Import backup
-to move them between devices.
+⋯ → Export / Import backup moves colours between any of these; importing only adds, never replaces.
 
 ## Data
-
-Everything is stored in `localStorage` under `tinyButterfly.v1`:
 
 ```json
 {
   "days":     { "2026-10-29": { "hex": "#6A4C93", "note": "plum dusk", "at": "…" } },
-  "palettes": [ { "id": "p_…", "name": "…", "dates": ["2026-10-29", "…"], "source": "manual|harmony" } ],
-  "lastVisual": "p_…"
+  "palettes": [ { "id": "p_…", "name": "…", "dates": ["2026-10-29", "…"], "source": "manual|harmony", "updatedAt": "…" } ],
+  "lastVisual": "p_…",
+  "gone":     { "days": { "2026-10-01": "…" }, "palettes": { "p_…": "…" } }
 }
 ```
 
-Palettes point at days, so changing a day's colour changes it in every palette that uses it.
+In the browser it's under `localStorage['tinyButterfly.v1']`; on the Mac it's `data.json`. Palettes point
+at days, so changing a day's colour changes it in every palette that uses it. `gone` remembers removals so
+syncing can't bring them back.
 
 ## Files
 
