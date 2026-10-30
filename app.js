@@ -501,14 +501,25 @@
       for (const [k, d] of Object.entries(data.days)) {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || !Color.parseHex(d?.hex)) throw new Error('day');
       }
-      const n = Object.keys(data.days).length;
-      if (!confirm(`Replace everything here with this backup (${n} colours, ${data.palettes.length} palettes)?`)) return;
-      state = { days: data.days, palettes: data.palettes, lastVisual: data.lastVisual ?? null };
+      // Merge, never replace: days you don't have are added; where both have a day, the newer one
+      // wins; palettes you don't have are added. Nothing here is lost by importing.
+      const newDays = Object.keys(data.days).filter((k) => {
+        const mine = state.days[k];
+        return !mine || (data.days[k].at || '') > (mine.at || '');
+      });
+      const have = new Set(state.palettes.map((p) => p.id));
+      const newPals = data.palettes.filter((p) => p && p.id && !have.has(p.id));
+      if (!newDays.length && !newPals.length) { toast('Nothing new in that backup'); return; }
+      const what = [newDays.length && `${newDays.length} colour${newDays.length === 1 ? '' : 's'}`,
+        newPals.length && `${newPals.length} palette${newPals.length === 1 ? '' : 's'}`].filter(Boolean).join(' and ');
+      if (!confirm(`Add ${what} from this backup? Everything already here stays.`)) return;
+      for (const k of newDays) state.days[k] = data.days[k];
+      state.palettes.push(...newPals);
       save();
       $('#settings').close();
       openDay(todayKey());
       renderPalettes();
-      toast('Backup restored');
+      toast('Backup added');
     } catch {
       toast('That file doesn’t look like a Tiny Butterfly backup');
     }
