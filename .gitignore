@@ -6,3 +6,5 @@ __pycache__/
 data.json
 data.prev.json
 data.json.tmp
+data *.json
+data.prev *.json
