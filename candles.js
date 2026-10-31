@@ -13,6 +13,7 @@ const Candles = (() => {
   const BLOW = 0.075;      // how close (screen heights) a swipe must pass to blow a flame out
   const WIND = 0.14;       // how far the breath reaches to make flames lean
   const SIZE = 0.075;      // a flame's height, in screen heights
+  const START = 60;        // flames already lit when you open it
 
   let canvas, ctx, glowCanvas, gctx;
   let W = 0, H = 0, clock = 0;
@@ -25,7 +26,14 @@ const Candles = (() => {
     ctx = canvas.getContext('2d');
     glowCanvas = document.createElement('canvas');
     gctx = glowCanvas.getContext('2d');
-    light(0.5, 0.58); // one flame to begin with, so the dark isn't empty
+    // 60 flames to begin with, for Mum's 60th: spread evenly over an oval like the top of a cake
+    // (a sunflower spiral, so they sit close but never in rows).
+    const aspect = (window.innerWidth || 1) / (window.innerHeight || 1);
+    for (let i = 0; i < START; i++) {
+      const r = Math.sqrt((i + 0.5) / START), a = i * 2.39996;
+      // the oval is 0.36 x 0.15 screen heights, close enough for the flames to merge
+      light(0.5 + Math.cos(a) * r * 0.18 / aspect, 0.48 + Math.sin(a) * r * 0.075);
+    }
   }
 
   const setColours = () => {}; // the palette tints the fire in shader.js

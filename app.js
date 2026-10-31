@@ -12,7 +12,7 @@
   // ---- state --------------------------------------------------------------
   // { days: { 'YYYY-MM-DD': { hex, note, at } (older entries may also carry a pantone) },
   //   palettes: [{ id, name, dates: [...], source: 'manual'|'harmony', createdAt }],
-  //   lastVisual: paletteId | null, lastStyle: 'liquid'|'storm'|'clouds'|'vapour'|'mist'|'threads'|'candles',
+  //   lastVisual: paletteId | null, lastStyle: 'liquid'|'storm'|'clouds'|'vapour'|'mist'|'threads'|'candles'|'fluid',
   //   gone: { days: { key: when removed }, palettes: { id: when removed } } }
   // Palettes also carry updatedAt once edited. `gone` remembers removals so syncing can't bring them back.
   let state = load();

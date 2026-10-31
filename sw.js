@@ -1,8 +1,8 @@
 // Network-first for everything, falling back to cache when offline.
 // Fresh code whenever the server is reachable; still opens with no connection.
-const CACHE = 'tiny-butterfly-v5';
+const CACHE = 'tiny-butterfly-v6';
 const SHELL = [
-  './', 'index.html', 'style.css', 'app.js', 'color.js', 'threads.js', 'candles.js', 'shader.js', 'manifest.json',
+  './', 'index.html', 'style.css', 'app.js', 'color.js', 'threads.js', 'candles.js', 'fluid.js', 'shader.js', 'manifest.json',
   'icons/favicon.svg', 'icons/favicon-32.png', 'icons/favicon-48.png', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 

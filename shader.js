@@ -8,6 +8,7 @@
 //   clouds — soft volumetric clouds; your finger moves the sun that lights them
 //   vapour — glowing pieces of dry ice sublimating into fibrous vapour (a feedback buffer advected
 //            by swirling flow); tap to drop a piece, drag to carry it and stream its vapour
+//   fluid  — a tribute to The Coding Train's fluid simulation: stir dye in your palette (fluid.js)
 const Visual = (() => {
   const FIELD = 2.2; // noise field units across the screen height
   const MAX_COLS = 6;
@@ -23,6 +24,7 @@ const Visual = (() => {
   const VAPOUR_SCALE = 1.0; // vapour buffer resolution relative to the canvas (higher = finer fibres)
   const ICE_LIFE = 12;      // seconds a dropped piece takes to sublimate away
   const VAPOUR_LIFE = 4.6;  // seconds a wisp of vapour lives before it's gone
+  const HUE_SPEED = 0.08;   // vapour: how many times a second each heart goes all the way round the palette
   const WIPE = 0.06;        // mist: how wide your finger wipes the glass, in screen heights
 
   const STYLES = {
@@ -33,6 +35,7 @@ const Visual = (() => {
     threads: { prog: 'threads', speed: 1, warp: 0, bright: 1.0 },
     candles: { prog: 'candles', speed: 1, warp: 0, bright: 1.0 },
     mist: { prog: 'mist', speed: 1, warp: 0, bright: 1.0 },
+    fluid: { prog: 'fluid', speed: 1, warp: 0, bright: 1.0 },
   };
 
   const VERT = `attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}`;
@@ -384,6 +387,11 @@ void main(){
 uniform sampler2D uVap;
 uniform vec4 uSrc[${SOURCES}];   // xy = uv, z = strength 0..1, w = seed
 // Signed distance to a heart (point at the origin, lobes up to y ~ 1); negative inside.
+vec3 colAt(float k){   // palette colour k (no dynamic indexing in WebGL 1)
+  vec3 c = uCols[0];
+  for (int j = 1; j < ${MAX_COLS}; j++) if (float(j) == k) c = uCols[j];
+  return c;
+}
 float heart(vec2 p){
   p.x = abs(p.x);
   if (p.y + p.x > 1.) return length(p - vec2(.25, .75)) - .35355;
@@ -397,9 +405,10 @@ void main(){
   vec4 V = texture2D(uVap, uv);
   float v = V.r * pow(max(1. - V.g, 0.), 1.4);   // born bright, fades as it ages
   v = v / (1. + v * .35);                       // soften where plumes pile up
-  // The colour this vapour was born with, eased toward the nearest palette colour so each one reads.
-  float hx = V.b * (uCount - 1.), hf = fract(hx);
-  vec3 pc = palette((floor(hx) + mix(hf, smoothstep(0., 1., hf), .6)) / max(uCount - 1., 1.));
+  // The colour this vapour was born with: B goes round the palette (0..1 = first colour .. back to it),
+  // eased toward each palette colour so each one reads.
+  float hx = V.b * uCount, hk = floor(hx), hf = smoothstep(.15, .85, fract(hx));
+  vec3 pc = mix(colAt(mod(hk, uCount)), colAt(mod(hk + 1., uCount)), hf);
   vec3 c3 = mix(palette(1.), vec3(1.), .5);
   vec3 col = mix(vec3(.006), pc * .5, smoothstep(.07, .4, v)); // faint vapour stays dark, so strands read
   col = mix(col, pc, smoothstep(.28, .7, v));
@@ -472,6 +481,30 @@ void main(){
   vec3 col = c + warm * glow * .7 + vec3(.55, .52, .5) * smoke * .3;
   col = col / (1. + max(col - .9, 0.) * .8);
   gl_FragColor = vec4(finish(col, .4, .02), 1.);
+}`,
+
+    // The dye fluid.js simulated (uTrail, a small grid smoothed up to the screen). Its amount is cut
+    // into soft-edged blobs at screen resolution, so the shapes stay crisp however small the grid,
+    // with a gentle sheen from the slope of the dye, like thick liquid catching the light.
+    fluid: `
+uniform sampler2D uTrail, uVap;
+uniform vec2 uTexel;   // one cell of the fluid grid
+float amt(vec2 uv){ vec3 c = texture2D(uTrail, uv).rgb; return max(max(c.r, c.g), c.b); }
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 c = texture2D(uTrail, uv).rgb;
+  float a = max(max(c.r, c.g), c.b);
+  vec3 hue = c / max(a, 1e-3);
+  float body = smoothstep(.11, .21, a);                  // the blob's edge
+  vec2 dx = vec2(uTexel.x, 0.), dy = vec2(0., uTexel.y);
+  vec2 g = vec2(amt(uv + dx) - amt(uv - dx), amt(uv + dy) - amt(uv - dy));
+  vec3 n = normalize(vec3(-g * 2.2, .25));
+  float sheen = pow(max(dot(n, normalize(vec3(-.45, .55, 1.))), 0.), 24.) * body;
+  vec3 col = hue * body * (.5 + .5 * smoothstep(.15, .8, a));
+  col += mix(hue, vec3(1.), .55) * sheen * .3;
+  float halo = smoothstep(.0, .16, a) * (1. - body);       // a faint glow just outside each blob
+  col += hue * halo * .12;
+  gl_FragColor = vec4(finish(col, .3, .02), 1.);
 }`,
 
     // The lines threads.js drew (uTrail), over a soft glow blurred from its small copy (uVap).
@@ -604,9 +637,10 @@ void main(){
     float ang = atan(d.y, d.x);
     float fib = noise(vec2(ang * 72. + S.w, uTime * 1. + S.w)) * noise(vec2(ang * 19. - S.w, uTime * .35));
     float e = exp(-r * 32.) * (.016 + pow(fib, 2.5) * 9.) * S.z;  // mostly fibre, only a little smooth glow
-    // Each piece breathes out one palette colour at a time, slowly moving through all of them (back and
-    // forth, each piece out of step), so its plume trails away in the colours it's been through.
-    float hue = 1. - abs(2. * fract(uTime * .11 + float(i) * .5 + float(i / 2) * .23) - 1.);
+    // Each piece breathes out one palette colour at a time, going round all of them, so its plume trails
+    // away in the colours it's been through. Where in the round each piece is comes from its seed's
+    // fraction, so pieces stay out of step (a new one starts on its own colour).
+    float hue = fract(uTime * ${HUE_SPEED} + fract(S.w));
     em += e; emc += e * hue;
   }
   // Vapour has a lifecycle: R = density, G = age (0 newborn .. 1 dead), B = its palette colour (0..1).
@@ -637,7 +671,8 @@ void main(){
   let vapour = null, vapourProg = null;
   let clock = 0;    // real seconds since start (vapour's flow shouldn't depend on style speed)
   const ice = Array.from({ length: SOURCES }, (_, i) =>
-    ({ auto: i < 2, x: 0.5, y: 0.5, age: 99, seed: Math.random() * 50, held: false }));
+    ({ auto: i < 2, x: 0.5, y: 0.5, age: 99, seed: Math.floor(Math.random() * 50) + i * 0.5, held: false }));
+  let dropped = 0;  // vapour: hearts you've dropped, so each starts on the next palette colour
   let running = false, raf = 0, last = 0, time = 0;
   let cols = new Float32Array(MAX_COLS * 3), count = 2;
   let style = STYLES.liquid;
@@ -854,6 +889,7 @@ void main(){
       program('liquid');
       Threads.init();
       Candles.init();
+      Fluid.init();
     } catch (err) {
       console.error(err);
       return false;
@@ -878,10 +914,11 @@ void main(){
     count = list.length;
     Threads.setColours(cols, count);
     Candles.setColours(cols, count);
+    Fluid.setColours(cols, count);
   }
 
-  // Styles drawn in 2D (threads, candles) and composited here.
-  const painter = () => (style.prog === 'threads' ? Threads : style.prog === 'candles' ? Candles : null);
+  // Styles drawn in 2D (threads, candles, fluid) and composited here.
+  const painter = () => ({ threads: Threads, candles: Candles, fluid: Fluid })[style.prog] || null;
 
   function uploadThreads(src) {
     if (!threadTex) {
@@ -1064,7 +1101,10 @@ void main(){
       painter()?.pointer('down', x, y);
       if (style.prog === 'vapour') {
         const k = oldest(ice.filter((q) => !q.auto));
-        Object.assign(k, { x, y, age: 0, seed: Math.random() * 50, held: true });
+        // seed's fraction = where this heart starts in the colour cycle: right on the next palette colour
+        const target = ((dropped++ % count) + 0.5) / count;
+        const phase = (((target - clock * HUE_SPEED) % 1) + 1) % 1;
+        Object.assign(k, { x, y, age: 0, seed: Math.floor(Math.random() * 50) + phase, held: true });
       }
       try { canvas.setPointerCapture(e.pointerId); } catch {}
     });

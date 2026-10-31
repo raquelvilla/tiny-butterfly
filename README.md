@@ -34,6 +34,10 @@ A colour a day, folded into palettes and liquid light.
     you touch; drag to blow, and flames lean away from your breath while the nearest go out with a
     curl of smoke. Flames crowded together merge into one bigger, brighter, taller fire: the more you
     light, the more it all burns. The fire burns in your palette, darkest at the edges to lightest at the heart.
+  - **fluid**: a tribute to The Coding Train's [Coding Challenge 132: Fluid Simulation](https://www.youtube.com/watch?v=alhpH6ECFvQ)
+    (Jos Stam's stable fluids, via Mike Ash and Daniel Shiffman). As in the video, a source shoots
+    dye in a direction that wanders with noise, going round your palette; here it wanders the screen too. Drag to stir
+    it and pour in colour; each stroke pours the next colour of your palette. Tap for a splash.
 
 ## Run it
 
@@ -84,5 +88,6 @@ syncing can't bring them back.
 | `shader.js` | WebGL styles and their touch effects |
 | `threads.js` | the threads style's bezier pen (drawn in 2D, composited by `shader.js`) |
 | `candles.js` | the candles style's flames (as heat) and smoke (drawn in 2D, composited by `shader.js`) |
+| `fluid.js` | the fluid style's simulation (Stam's stable fluids on a small grid; dye handed to `shader.js`) |
 | `sw.js`, `manifest.json`, `icons/` | installable / offline |
 | `tools/make_icons.py` | redraws every icon from the header's dotted mark: white for the app, plus white and black sets in `icons/set/` (needs Pillow) |
