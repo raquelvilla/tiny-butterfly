@@ -495,13 +495,14 @@ void main(){
   vec3 c = texture2D(uTrail, uv).rgb;
   float a = max(max(c.r, c.g), c.b);
   vec3 hue = c / max(a, 1e-3);
-  float body = smoothstep(.11, .21, a);                  // the blob's edge
+  float body = smoothstep(.12, .17, a);                  // the blob's edge: clean, like a drop
   vec2 dx = vec2(uTexel.x, 0.), dy = vec2(0., uTexel.y);
   vec2 g = vec2(amt(uv + dx) - amt(uv - dx), amt(uv + dy) - amt(uv - dy));
-  vec3 n = normalize(vec3(-g * 2.2, .25));
-  float sheen = pow(max(dot(n, normalize(vec3(-.45, .55, 1.))), 0.), 24.) * body;
-  vec3 col = hue * body * (.5 + .5 * smoothstep(.15, .8, a));
-  col += mix(hue, vec3(1.), .55) * sheen * .3;
+  vec3 n = normalize(vec3(-g * 3.5, .2));
+  float lit = .55 + .45 * max(dot(n, normalize(vec3(-.4, .5, .8))), 0.);   // rounded, like a bead of liquid
+  float sheen = pow(max(dot(n, normalize(vec3(-.45, .55, 1.))), 0.), 30.) * body;
+  vec3 col = hue * body * lit * (.6 + .4 * smoothstep(.15, .6, a));
+  col += mix(hue, vec3(1.), .6) * sheen * .45;
   float halo = smoothstep(.0, .16, a) * (1. - body);       // a faint glow just outside each blob
   col += hue * halo * .12;
   gl_FragColor = vec4(finish(col, .3, .02), 1.);

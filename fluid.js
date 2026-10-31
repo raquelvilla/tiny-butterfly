@@ -11,12 +11,12 @@
 const Fluid = (() => {
   const ROWS = 220;        // grid cells down the screen at most (columns follow the screen's shape)
   const CELLS = 55000;     // ...but never more cells than this, so wide screens stay smooth
-  const SWIRL = 0.15;      // vorticity confinement: puts back the small curls the grid would smooth away
+  const SWIRL = 0.08;      // vorticity confinement: puts back the small curls the grid would smooth away
   const ITER = 4;          // solver iterations, as in the video
   const VISC = 0.0000001;  // viscosity
-  const DIFF = 0.000015;   // dye spreading a little on its own, so it stays soft and blobby
+  const DIFF = 0.00004;    // dye spreading a little on its own, so it stays soft and blobby
   const FADE = 0.985;      // dye left after each 60th of a second
-  const STEP = 0.12;       // simulation time per frame at 60fps
+  const STEP = 0.075;      // simulation time per frame at 60fps (lower = slower, lazier fluid)
 
   let canvas, ctx, img;
   let N = 0, M = 0, size = 0;          // columns, rows, cells including the border
@@ -162,11 +162,13 @@ const Fluid = (() => {
 
   function pour(u, v, colour, amount, ax, ay, radius = 2) {
     const [ci, cj] = cell(u, v);
-    for (let j = -radius; j <= radius; j++) {
-      for (let i = -radius; i <= radius; i++) {
-        const x = ci + i, y = cj + j;
-        if (x < 1 || x > N || y < 1 || y > M) continue;
-        const w = Math.exp(-(i * i + j * j) / (radius * radius * 0.6));
+    // a round dab that fades all the way to nothing at its rim (a cut-off would leave square corners)
+    const R = radius * 1.5, r = Math.ceil(R);
+    for (let j = -r; j <= r; j++) {
+      for (let i = -r; i <= r; i++) {
+        const x = ci + i, y = cj + j, d = (i * i + j * j) / (R * R);
+        if (d >= 1 || x < 1 || x > N || y < 1 || y > M) continue;
+        const w = (1 - d) * (1 - d);
         const n = IX(x, y);
         dr[n] += colour[0] * amount * w;
         dg[n] += colour[1] * amount * w;
@@ -196,8 +198,9 @@ const Fluid = (() => {
     const k = clock * 0.18;
     const c0 = colourAt(Math.floor(k)), c1 = colourAt(Math.floor(k) + 1), f = k - Math.floor(k);
     const c = c0.map((v, i) => v + (c1[i] - v) * f);
-    const su = 0.5 + (noise(clock * 0.07 + 31) - 0.5) * 1.3, sv = 0.5 + (noise(clock * 0.06 + 77) - 0.5) * 1.3;
-    pour(su, sv, c, 24 * dt, Math.cos(ang) * 12 * dt, Math.sin(ang) * 12 * dt, 5);
+    const su = 0.5 + (noise(clock * 0.07 + 31) - 0.5) * 0.8, sv = 0.5 + (noise(clock * 0.06 + 77) - 0.5) * 0.8; // stays off the edges
+    const push = 4 + 16 * noise(clock * 0.5 + 13) ** 2;   // sometimes a lazy ooze, sometimes a quicker spurt
+    pour(su, sv, c, 24 * dt, Math.cos(ang) * push * dt, Math.sin(ang) * push * dt, 7);
     step(STEP * dt * 60, Math.pow(FADE, dt * 60));
     draw();
     return { lines: canvas, glow: canvas };
@@ -222,10 +225,12 @@ const Fluid = (() => {
     if (type === 'down') {
       stroke++;
       prev = [u, v];
-      pour(u, v, colourAt(stroke), 3, 0, 0, 8); // a splash where you touch
+      // a splash where you touch, set drifting off on its own, each at its own pace
+      const a = Math.random() * Math.PI * 2, sp = 0.05 + Math.random() * 0.25;
+      pour(u, v, colourAt(stroke), 3, Math.cos(a) * sp, Math.sin(a) * sp, 11);
     } else if (type === 'move' && prev) {
       const dx = (u - prev[0]) * N, dy = -(v - prev[1]) * M; // in cells
-      pour(u, v, colourAt(stroke), 1.4, dx * 0.15, dy * 0.15, 5);
+      pour(u, v, colourAt(stroke), 1.6, dx * 0.15, dy * 0.15, 7);
       prev = [u, v];
     } else if (type === 'up') {
       prev = null;
