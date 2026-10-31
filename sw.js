@@ -1,9 +1,9 @@
 // Network-first for everything, falling back to cache when offline.
 // Fresh code whenever the server is reachable; still opens with no connection.
-const CACHE = 'tiny-butterfly-v1';
+const CACHE = 'tiny-butterfly-v2';
 const SHELL = [
   './', 'index.html', 'style.css', 'app.js', 'color.js', 'threads.js', 'candles.js', 'shader.js', 'manifest.json',
-  'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
+  'icons/favicon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 
 self.addEventListener('install', (e) => {
