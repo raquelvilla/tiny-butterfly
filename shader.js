@@ -22,7 +22,7 @@ const Visual = (() => {
   const SOURCES = 6;        // vapour: 2 drifting ice pieces + up to 4 you drop
   const VAPOUR_SCALE = 1.0; // vapour buffer resolution relative to the canvas (higher = finer fibres)
   const ICE_LIFE = 12;      // seconds a dropped piece takes to sublimate away
-  const VAPOUR_LIFE = 3.8;  // seconds a wisp of vapour lives before it's gone
+  const VAPOUR_LIFE = 4.6;  // seconds a wisp of vapour lives before it's gone
   const WIPE = 0.06;        // mist: how wide your finger wipes the glass, in screen heights
 
   const STYLES = {
@@ -377,8 +377,9 @@ void main(){
 }`,
 
     // Glowing hearts sublimating on black, like dry ice. The vapour lives in a feedback buffer
-    // (vapourStep); here it's coloured like heat through the palette, dark -> colours -> white-hot,
-    // and each piece is a white-hot heart with a glow.
+    // (vapourStep), which also remembers which palette colour each strand was born with (B), so every
+    // colour streams out as its own fibres, brightening toward white-hot where the vapour is densest.
+    // Each piece is a white-hot heart with a glow.
     vapour: `
 uniform sampler2D uVap;
 uniform vec4 uSrc[${SOURCES}];   // xy = uv, z = strength 0..1, w = seed
@@ -396,10 +397,13 @@ void main(){
   vec4 V = texture2D(uVap, uv);
   float v = V.r * pow(max(1. - V.g, 0.), 1.4);   // born bright, fades as it ages
   v = v / (1. + v * .35);                       // soften where plumes pile up
-  vec3 c1 = palette(.3) * .5, c2 = palette(.7), c3 = mix(palette(1.), vec3(1.), .5);
-  vec3 col = mix(vec3(.006), c1, smoothstep(.07, .4, v));    // faint vapour stays dark, so strands read
-  col = mix(col, c2, smoothstep(.28, .7, v));
-  col = mix(col, c3, smoothstep(.75, 1., v));
+  // The colour this vapour was born with, eased toward the nearest palette colour so each one reads.
+  float hx = V.b * (uCount - 1.), hf = fract(hx);
+  vec3 pc = palette((floor(hx) + mix(hf, smoothstep(0., 1., hf), .6)) / max(uCount - 1., 1.));
+  vec3 c3 = mix(palette(1.), vec3(1.), .5);
+  vec3 col = mix(vec3(.006), pc * .5, smoothstep(.07, .4, v)); // faint vapour stays dark, so strands read
+  col = mix(col, pc, smoothstep(.28, .7, v));
+  col = mix(col, mix(pc, vec3(1.), .45), smoothstep(.8, 1., v));
   for (int i = 0; i < ${SOURCES}; i++) {
     vec4 S = uSrc[i];
     if (S.z <= 0.) continue;
@@ -590,7 +594,7 @@ void main(){
   vec2 p = uv * asp;
   vec2 vel = curl(p * 1.6 + vec2(0., uTime * .06), 3.) * .13 + vec2(0., .05)   // broad, slow currents
           + curl(p * 5.5 - vec2(uTime * .04, 0.) + 7., 2.) * .035;             // and fine eddies within them
-  float em = 0.;
+  float em = 0., emc = 0.;
   for (int i = 0; i < ${SOURCES}; i++) {
     vec4 S = uSrc[i];
     if (S.z <= 0.) continue;
@@ -599,23 +603,29 @@ void main(){
     vel += d / r * .25 * S.z * exp(-r * 5.);
     float ang = atan(d.y, d.x);
     float fib = noise(vec2(ang * 72. + S.w, uTime * 1. + S.w)) * noise(vec2(ang * 19. - S.w, uTime * .35));
-    em += exp(-r * 32.) * (.016 + pow(fib, 2.5) * 9.) * S.z;  // mostly fibre, only a little smooth glow
+    float e = exp(-r * 32.) * (.016 + pow(fib, 2.5) * 9.) * S.z;  // mostly fibre, only a little smooth glow
+    // Each piece breathes out one palette colour at a time, slowly moving through all of them (back and
+    // forth, each piece out of step), so its plume trails away in the colours it's been through.
+    float hue = 1. - abs(2. * fract(uTime * .11 + float(i) * .5 + float(i / 2) * .23) - 1.);
+    em += e; emc += e * hue;
   }
-  // Vapour has a lifecycle: R = density, G = age (0 newborn .. 1 dead). It's carried by the flow,
-  // ages every frame, and is gone at age 1, so only the last few seconds of vapour ever exist and
+  // Vapour has a lifecycle: R = density, G = age (0 newborn .. 1 dead), B = its palette colour (0..1).
+  // It's carried by the flow, ages every frame, and is gone at age 1, so only the last few seconds of vapour ever exist and
   // the frame can't fill up. New vapour born at the ice resets the age where it lands.
   vec2 back = uv - vel / asp * uDt;
   vec4 prev = texture2D(uPrev, back);
-  float d = prev.r, age = prev.g;
+  float d = prev.r, age = prev.g, hue = prev.b;
   float born = em * uDt * 3.;
   born *= step(.0015, born);   // faint traces far from the ice don't count as births (or nothing would ever die)
-  age = mix(age, 0., born / max(d + born, 1e-4));
+  float w = born / max(d + born, 1e-4);
+  age = mix(age, 0., w);
+  hue = mix(hue, emc / max(em, 1e-5), w);
   d = min(d + born, 1.);
   age += uDt / ${VAPOUR_LIFE.toFixed(2)};
   if (age >= 1.) d = 0.;
   // 8-bit storage: dither so slow ageing still advances on average instead of rounding away.
   float dz = (hash(gl_FragCoord.xy + fract(uTime * 7.3) * 113.) - .5) / 255.;
-  gl_FragColor = vec4(clamp(d + dz, 0., 1.), clamp(age + dz, 0., 1.), 0., 1.);
+  gl_FragColor = vec4(clamp(d + dz, 0., 1.), clamp(age + dz, 0., 1.), hue, 1.);
 }`,
   };
 
