@@ -85,6 +85,6 @@ if __name__ == "__main__":
         print("wrote icons/set/" + name)
     # The app itself uses the white look
     white = ICONS / "set" / "white"
-    for n in ("icon-180.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "favicon.svg"):
+    for n in ("icon-180.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "favicon.svg", "favicon-32.png", "favicon-48.png"):
         shutil.copy(white / n, ICONS / n)
     print("app icons: white")
