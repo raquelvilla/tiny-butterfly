@@ -84,4 +84,4 @@ syncing can't bring them back.
 | `threads.js` | the threads style's bezier pen (drawn in 2D, composited by `shader.js`) |
 | `candles.js` | the candles style's flames (as heat) and smoke (drawn in 2D, composited by `shader.js`) |
 | `sw.js`, `manifest.json`, `icons/` | installable / offline |
-| `tools/make_icons.py` | redraws the butterfly icons |
+| `tools/make_icons.py` | redraws every icon from the header's dotted mark: white for the app, plus white and black sets in `icons/set/` (needs Pillow) |

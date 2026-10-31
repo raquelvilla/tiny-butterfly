@@ -1,73 +1,90 @@
 #!/usr/bin/env python3
-"""Draws the Tiny Butterfly app icons as PNGs. No dependencies; run once: python3 tools/make_icons.py"""
-import math
+"""Draws the Tiny Butterfly icons from the dotted mark in index.html's header. Needs Pillow.
+
+    python3 tools/make_icons.py
+
+Writes the app's own icons (icons/*.png, icons/favicon.svg, white) and a full set in two looks:
+icons/set/white (black dots on white) and icons/set/black (lilac dots on black), each with favicons,
+home-screen sizes, a maskable icon and a macOS .icns for the Desktop app.
+"""
 import pathlib
-import struct
-import zlib
+import re
+import shutil
+import subprocess
 
-OUT = pathlib.Path(__file__).resolve().parent.parent / "icons"
+from PIL import Image, ImageDraw
 
-TOP = (0xF6, 0xC9, 0xB8)     # peach
-BOTTOM = (0xC9, 0xB6, 0xF2)  # lilac
-WING_A = (0xE4, 0x57, 0x2E)  # flame
-WING_B = (0x3D, 0x2C, 0x8D)  # deep violet
-BODY = (0x1E, 0x1A, 0x1D)
-
-
-def in_ellipse(x, y, cx, cy, rx, ry, ang):
-    c, s = math.cos(ang), math.sin(ang)
-    dx, dy = x - cx, y - cy
-    u, v = dx * c + dy * s, -dx * s + dy * c
-    return (u / rx) ** 2 + (v / ry) ** 2 <= 1
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+ICONS = ROOT / "icons"
+LOOKS = {  # name: (background, dots)
+    "white": ("#FFFFFF", "#111111"),
+    "black": ("#111111", "#C9B6F2"),
+}
 
 
-def butterfly(x, y, k):
-    """x, y in [-1, 1] (y down). Returns a colour, or None for background."""
-    bx, by = abs(x / k), y / k
-    if in_ellipse(bx, by, 0.0, 0.02, 0.05, 0.40, 0):
-        return BODY
-    if in_ellipse(bx, by, 0.10, -0.50, 0.014, 0.16, 0.45):
-        return BODY  # antennae
-    if in_ellipse(bx, by, 0.38, -0.20, 0.36, 0.27, -0.5):
-        return WING_B if in_ellipse(bx, by, 0.44, -0.25, 0.15, 0.10, -0.5) else WING_A
-    if in_ellipse(bx, by, 0.27, 0.25, 0.22, 0.18, 0.6):
-        return WING_B
-    return None
+def mark():
+    """The header's dots (viewBox 40 x 31): their <circle> tags and (cx, cy, r)."""
+    html = (ROOT / "index.html").read_text()
+    svg = html[html.index('<svg viewBox="0 0 40 31"'):]
+    svg = svg[:svg.index("</svg>")]
+    tags = re.findall(r"<circle[^>]*/>", svg)
+    dots = [tuple(map(float, m)) for m in re.findall(r'cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"', svg)]
+    return tags, dots
 
 
-def render(size, k, ss=3):
-    rows = []
-    for py in range(size):
-        row = bytearray([0])
-        for px in range(size):
-            acc = [0, 0, 0]
-            for sy in range(ss):
-                for sx in range(ss):
-                    x = (px + (sx + 0.5) / ss) / size * 2 - 1
-                    y = (py + (sy + 0.5) / ss) / size * 2 - 1
-                    c = butterfly(x, y, k)
-                    if c is None:
-                        t = (y + 1) / 2
-                        c = [TOP[i] * (1 - t) + BOTTOM[i] * t for i in range(3)]
-                    for i in range(3):
-                        acc[i] += c[i]
-            row.extend(int(a / (ss * ss) + 0.5) for a in acc)
-        rows.append(bytes(row))
-    return png(size, size, b"".join(rows))
+def rgb(h):
+    return tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
 
 
-def png(w, h, raw):
-    def chunk(tag, data):
-        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
-    return (b"\x89PNG\r\n\x1a\n"
-            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
-            + chunk(b"IDAT", zlib.compress(raw, 9))
-            + chunk(b"IEND", b""))
+def draw(dots, size, bg, ink, mark_w, tile=None, radius=0):
+    """Mark centred, mark_w wide (fraction of the canvas). tile: macOS rounded tile (fraction), else full bleed."""
+    S = 4
+    W = size * S
+    img = Image.new("RGBA", (W, W), (0, 0, 0, 0) if tile else rgb(bg) + (255,))
+    d = ImageDraw.Draw(img)
+    if tile:
+        m = W * (1 - tile) / 2
+        d.rounded_rectangle([m, m, W - m, W - m], radius=radius * W, fill=rgb(bg) + (255,))
+    sc = mark_w * W / 40
+    ox, oy = W / 2 - 20 * sc, W / 2 - 15.5 * sc
+    for x, y, r in dots:
+        cx, cy, rr = ox + x * sc, oy + y * sc, r * sc
+        d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=rgb(ink) + (255,))
+    return img.resize((size, size), Image.LANCZOS)
+
+
+def favicon_svg(tags, bg, ink):
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="{bg}"/>'
+            f'<g fill="{ink}" transform="translate(12 16.5)">{"".join(tags)}</g></svg>\n')
+
+
+def write_set(tags, dots, out, bg, ink):
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "logo.svg").write_text(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 31" fill="{ink}">{"".join(tags)}</svg>\n')
+    (out / "favicon.svg").write_text(favicon_svg(tags, bg, ink))
+    for s in (16, 32, 48):
+        draw(dots, s, bg, ink, .78).save(out / f"favicon-{s}.png")
+    for s in (180, 192, 512, 1024):
+        draw(dots, s, bg, ink, .5).save(out / f"icon-{s}.png")
+    draw(dots, 512, bg, ink, .4).save(out / "icon-maskable-512.png")  # stays inside Android's safe circle
+    big = draw(dots, 1024, bg, ink, .43, tile=824 / 1024, radius=185 / 1024)  # Apple's icon grid
+    big.save(out / "mac-1024.png")
+    iconset = out / "mac.iconset"
+    iconset.mkdir(exist_ok=True)
+    for s in (16, 32, 128, 256, 512):
+        big.resize((s, s), Image.LANCZOS).save(iconset / f"icon_{s}x{s}.png")
+        big.resize((s * 2, s * 2), Image.LANCZOS).save(iconset / f"icon_{s}x{s}@2x.png")
+    subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(out / "mac.icns")], check=True)
+    shutil.rmtree(iconset)
 
 
 if __name__ == "__main__":
-    OUT.mkdir(exist_ok=True)
-    for name, size, k in [("icon-180.png", 180, 0.85), ("icon-192.png", 192, 0.85),
-                          ("icon-512.png", 512, 0.85), ("icon-maskable-512.png", 512, 0.62)]:
-        (OUT / name).write_bytes(render(size, k))
-        print("wrote", name)
+    tags, dots = mark()
+    for name, (bg, ink) in LOOKS.items():
+        write_set(tags, dots, ICONS / "set" / name, bg, ink)
+        print("wrote icons/set/" + name)
+    # The app itself uses the white look
+    white = ICONS / "set" / "white"
+    for n in ("icon-180.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "favicon.svg"):
+        shutil.copy(white / n, ICONS / n)
+    print("app icons: white")
